@@ -1,0 +1,43 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`Badge > renderiza con variante danger 1`] = `null`;
+
+exports[`Badge > renderiza con variante default 1`] = `null`;
+
+exports[`Badge > renderiza con variante info 1`] = `null`;
+
+exports[`Badge > renderiza con variante success 1`] = `null`;
+
+exports[`Badge > renderiza con variante warning 1`] = `null`;
+
+exports[`Button > renderiza en estado de carga con indicador 1`] = `null`;
+
+exports[`Button > renderiza en estado deshabilitado 1`] = `null`;
+
+exports[`Button > renderiza la variante danger 1`] = `null`;
+
+exports[`Button > renderiza la variante ghost 1`] = `null`;
+
+exports[`Button > renderiza la variante primary por defecto 1`] = `null`;
+
+exports[`Button > renderiza la variante secondary 1`] = `null`;
+
+exports[`Card > aplica className adicional 1`] = `null`;
+
+exports[`Card > renderiza hijos correctamente 1`] = `null`;
+
+exports[`EmptyState > renderiza con botón de acción cuando se proveen actionLabel y onAction 1`] = `null`;
+
+exports[`EmptyState > renderiza título y subtítulo 1`] = `null`;
+
+exports[`Header > renderiza solo el título 1`] = `null`;
+
+exports[`Header > renderiza título con botón de acción 1`] = `null`;
+
+exports[`Input > renderiza con label y valor 1`] = `null`;
+
+exports[`Input > renderiza con mensaje de error 1`] = `null`;
+
+exports[`Input > renderiza en estado deshabilitado 1`] = `null`;
+
+exports[`LoadingSkeleton > renderiza 1 ítem por defecto 1`] = `null`;
