@@ -1,0 +1,25 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pnpm test:run)",
+      "Bash(pnpm web *)",
+      "Bash(curl -s http://localhost:8081)",
+      "Bash(npx expo *)",
+      "Bash(echo \"PID: $!\")",
+      "Bash(chmod 644 /Users/juanagramonte/Documents/Desarrollo/Travel-app/260422/TravelApp/apps/mobile/.gitignore)",
+      "Bash(pkill -f \"expo start\")",
+      "Bash(pkill -f \"metro\")",
+      "Bash(sleep 2 echo \"Procesos Expo/Metro terminados\" ls /Users/juanagramonte/Documents/Desarrollo/Travel-app/260422/TravelApp/node_modules/.pnpm/nativewind*/node_modules/nativewind/package.json)",
+      "Bash(find /Users/juanagramonte/Documents/Desarrollo/Travel-app/260422/TravelApp/node_modules/.pnpm/react-native-css-interop@0.1.*/node_modules/react-native-css-interop/package.json)",
+      "Bash(kill -9 10097)",
+      "Bash(node -e \"require.resolve\\('nativewind/metro', {paths: ['/Users/juanagramonte/Documents/Desarrollo/Travel-app/260422/TravelApp/apps/mobile']}\\)\")",
+      "Bash(node -e ' *)",
+      "Bash(xargs kill *)",
+      "Read(//tmp/**)",
+      "Bash(curl -s -o /tmp/page.html -w \"HTTP: %{http_code}\" http://localhost:8081)",
+      "Bash(echo \"EXIT: $?\")",
+      "Read(//private/tmp/**)",
+      "Bash(supabase --version)"
+    ]
+  }
+}

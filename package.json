@@ -1,0 +1,19 @@
+{
+  "name": "travelapp",
+  "version": "0.0.1",
+  "private": true,
+  "scripts": {
+    "dev": "pnpm --filter mobile dev",
+    "ios": "pnpm --filter mobile ios",
+    "android": "pnpm --filter mobile android",
+    "web": "pnpm --filter mobile web",
+    "test": "pnpm --filter mobile test",
+    "test:run": "pnpm --filter mobile test:run",
+    "typecheck": "pnpm --filter mobile typecheck && pnpm --filter @travelapp/types typecheck",
+    "lint": "pnpm --filter mobile lint"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=9.0.0"
+  }
+}

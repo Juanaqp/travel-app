@@ -1,0 +1,50 @@
+# Node
+node_modules/
+npm-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# Expo
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+
+# Build nativo
+ios/
+android/
+
+# Entorno — nunca commitear secretos
+.env
+.env.local
+.env.*.local
+!**/.env.local.example
+
+# macOS
+.DS_Store
+*.pem
+.AppleDouble
+.LSOverride
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+
+# Supabase
+supabase/.branches
+supabase/.temp
+
+# TypeScript
+*.tsbuildinfo
+
+# Testing
+coverage/
+
+# pnpm
+.pnpm-store/
