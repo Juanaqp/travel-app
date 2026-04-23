@@ -19,7 +19,14 @@
       "Bash(curl -s -o /tmp/page.html -w \"HTTP: %{http_code}\" http://localhost:8081)",
       "Bash(echo \"EXIT: $?\")",
       "Read(//private/tmp/**)",
-      "Bash(supabase --version)"
+      "Bash(supabase --version)",
+      "Bash(brew list *)",
+      "Bash(supabase gen *)",
+      "Bash(supabase db *)",
+      "Bash(supabase migration *)"
+    ],
+    "additionalDirectories": [
+      "/Users/juanagramonte/Documents/Exploration/Travel-app/260422/TravelApp/packages/types"
     ]
   }
 }

@@ -118,6 +118,10 @@ importers:
         version: 2.1.9(@types/node@25.6.0)(lightningcss@1.27.0)(terser@5.46.1)
 
   packages/types:
+    dependencies:
+      zod:
+        specifier: ^3.23.8
+        version: 3.25.76
     devDependencies:
       typescript:
         specifier: ~5.3.3

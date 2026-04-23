@@ -155,9 +155,9 @@ travel-app/
 │
 ├── supabase/
 │   ├── config.toml                    ← config del proyecto Supabase
-│   ├── migrations/                    ← SQL numerado: YYYYMMDD_HHmmss_nombre.sql
-│   │   ├── 20250422_000001_create_enums.sql
-│   │   ├── 20250422_000002_create_users.sql
+│   ├── migrations/                    ← SQL numerado: YYYYMMDDHHmmss_nombre.sql (14 dígitos)
+│   │   ├── 20260422000001_create_enums.sql
+│   │   ├── 20260422000002_create_users.sql
 │   │   └── ...
 │   └── functions/                     ← Edge Functions: una carpeta por función
 │       ├── generate-itinerary/
@@ -749,7 +749,7 @@ Antes de decir "listo" en cualquier tarea, verificar:
 
 ### Fase 2 — Schema de base de datos 🔄 EN PROGRESO
 - Tipos de BD: generados con `supabase gen types typescript --local > packages/types/database.ts`
-- Migraciones: en `supabase/migrations/` con formato `YYYYMMDD_HHmmss_descripcion.sql`
+- Migraciones: en `supabase/migrations/` con formato `YYYYMMDDHHmmss_descripcion.sql` (14 dígitos sin guion)
 - RLS: activado desde la migración (`ALTER TABLE x ENABLE ROW LEVEL SECURITY`) — nunca como paso posterior
 - Soft delete: columna `deleted_at TIMESTAMPTZ DEFAULT NULL` en trips, itineraries, itinerary_nodes, expenses, documents
 - Enums SQL: crear en migración `000001_create_enums.sql` antes que las tablas que los usan
