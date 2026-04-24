@@ -35,10 +35,21 @@
       "Bash(python3 -c \"import sys,json; p=json.load\\(sys.stdin\\); print\\('react-native installed:', p['version']\\)\")",
       "Bash(python3 -c \"import sys,json; p=json.load\\(sys.stdin\\); print\\('expo-constants installed:', p['version']\\)\")",
       "Bash(python3 -c ' *)",
-      "Bash(python3 -c \"import sys,json; p=json.load\\(sys.stdin\\); print\\('expo:', p['dependencies']['expo']\\); print\\('rn:', p['dependencies']['react-native']\\); print\\('router:', p['dependencies']['expo-router']\\)\")"
+      "Bash(python3 -c \"import sys,json; p=json.load\\(sys.stdin\\); print\\('expo:', p['dependencies']['expo']\\); print\\('rn:', p['dependencies']['react-native']\\); print\\('router:', p['dependencies']['expo-router']\\)\")",
+      "Bash(git stash *)",
+      "Bash(npx tsc *)",
+      "Bash(node_modules/.bin/tsc --version)",
+      "Bash(ls node_modules/.bin/tsc)",
+      "Bash(node_modules/.bin/tsc --noEmit --strict --jsx react-native --moduleResolution bundler --module esnext --target esnext --paths '{\"@/*\":[\"./*\"],\"@travelapp/types\":[\"../../packages/types\"]}' --baseUrl . --allowJs --esModuleInterop --skipLibCheck stores/useItineraryStore.ts hooks/useGenerateItinerary.ts 'app/\\(app\\)/trips/[id]/_layout.tsx' 'app/\\(app\\)/trips/[id]/index.tsx' 'app/\\(app\\)/trips/[id]/itinerary/generate.tsx')",
+      "Bash(node_modules/.bin/tsc --project /tmp/tscheck.json)",
+      "Bash(supabase functions *)",
+      "Bash(supabase status *)",
+      "Bash(supabase link *)"
     ],
     "additionalDirectories": [
-      "/Users/juanagramonte/Documents/Exploration/Travel-app/260422/TravelApp/packages/types"
+      "/Users/juanagramonte/Documents/Exploration/Travel-app/260422/TravelApp/packages/types",
+      "/Users/juanagramonte/Documents/Desarrollo/Travel-app/260422/TravelApp/apps/mobile/app/(app)/trips/[id]",
+      "/Users/juanagramonte/Documents/Desarrollo/Travel-app/260422/TravelApp/apps/mobile/app/(app)/trips"
     ]
   }
 }

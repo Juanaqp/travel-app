@@ -186,7 +186,7 @@ export default function TripDetailScreen() {
         trip.status === 'planning'
           ? 'Genera tu itinerario con IA'
           : 'Ver tu itinerario del viaje',
-      onPress: () => {},
+      onPress: () => router.push(`/(app)/trips/${id}/itinerary/generate` as never),
       accessibilityLabel: 'Módulo de itinerario del viaje',
     },
     {
