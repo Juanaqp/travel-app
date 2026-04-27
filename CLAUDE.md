@@ -458,27 +458,32 @@ CREATE POLICY "users_update_own_trips"
 ### 3. Reintentos automáticos en llamadas a LLMs
 
 ```typescript
-// ✅ Patrón de reintento para llamadas a la API de Gemini
-const callGeminiWithRetry = async (
+// ✅ Patrón de reintento para llamadas a la API de OpenAI
+const callOpenAIWithRetry = async (
   apiKey: string,
   prompt: string,
   maxAttempts: number = 2
 ): Promise<string> => {
   let lastError: Error | null = null
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`
+  const url = `https://api.openai.com/v1/chat/completions`
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
       const res = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`
+        },
         body: JSON.stringify({
-          contents: [{ role: 'user', parts: [{ text: prompt }] }],
-          generationConfig: { responseMimeType: 'application/json' },
+          model: 'gpt-4o-mini',
+          messages: [{ role: 'user', content: prompt }],
+          response_format: { type: 'json_object' },
+          max_tokens: 4096,
         }),
       })
       const data = await res.json()
-      return data.candidates[0].content.parts[0].text
+      return data.choices[0].message.content
     } catch (error) {
       lastError = error as Error
       logger.warn(`Intento ${attempt}/${maxAttempts} fallido`, { error })
@@ -490,7 +495,7 @@ const callGeminiWithRetry = async (
     }
   }
 
-  throw new Error(`API de Gemini falló después de ${maxAttempts} intentos: ${lastError?.message}`)
+  throw new Error(`API de OpenAI falló después de ${maxAttempts} intentos: ${lastError?.message}`)
 }
 ```
 
@@ -604,12 +609,12 @@ EXPO_PUBLIC_SUPABASE_ANON_KEY=   // Anon key — seguro exponer (RLS protege)
 EXPO_PUBLIC_POSTHOG_KEY=         // Analytics — seguro exponer
 
 // ✅ Variables solo en Edge Functions (servidor — nunca en el cliente)
-GEMINI_API_KEY=                  // ← NUNCA en código del cliente
+OPENAI_API_KEY=                  // ← NUNCA en código del cliente
 SUPABASE_SERVICE_ROLE_KEY=       // ← NUNCA en código del cliente
 ELEVENLABS_API_KEY=              // ← NUNCA en código del cliente
 
 // ❌ Nunca hardcodear claves
-const apiKey = 'AIzaSyXXXXXXXX'  // NUNCA — usar Deno.env.get('GEMINI_API_KEY')
+const apiKey = 'AIzaSyXXXXXXXX'  // NUNCA — usar Deno.env.get('OPENAI_API_KEY')
 ```
 
 ---
@@ -625,7 +630,7 @@ interface ItineraryGraph {
   id: string
   tripId: string
   status: 'draft' | 'reviewing' | 'approved' | 'saved'
-  generatedBy: string        // modelo LLM usado: 'gemini-2.0-flash'
+  generatedBy: string        // modelo LLM usado: 'gpt-4o-mini'
   userPrompt: string         // prompt original del usuario
   days: ItineraryDay[]
   nodes: Record<string, ItineraryNode>  // mapa nodeId → nodo
@@ -656,7 +661,7 @@ interface BaseNode {
   name: string
   description: string
   emoji: string
-  aiTip: string             // consejo práctico de Gemini
+  aiTip: string             // consejo práctico de OpenAI
   location: NodeLocation
   cost: NodeCost
   userStatus: 'pending' | 'approved' | 'rejected' | 'modified'
@@ -689,7 +694,7 @@ EXPO_PUBLIC_MAPBOX_TOKEN=pk.eyJ1...  # Solo si se usa Mapbox en lugar de expo-ma
 
 ```bash
 # IA — solo en servidor, NUNCA en cliente
-GEMINI_API_KEY=AIzaSyXXXXXXXXXXXXXXXX
+OPENAI_API_KEY=AIzaSyXXXXXXXXXXXXXXXX
 ELEVENLABS_API_KEY=sk_xxxxx            # Para audioguías en V1
 
 # Supabase admin — solo en servidor

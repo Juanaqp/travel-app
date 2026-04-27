@@ -23,7 +23,7 @@ const mapEditError = (msg: string): string => {
     return 'Tu sesión expiró. Vuelve a iniciar sesión.'
   if (msg.includes('Timeout') || msg.includes('tardó demasiado'))
     return 'La IA tardó demasiado. Inténtalo de nuevo.'
-  if (msg.includes('Gemini') || msg.includes('GEMINI') || msg.includes('401') || msg.includes('Unauthorized'))
+  if (msg.includes('OpenAI') || msg.includes('OPENAI') || msg.includes('401') || msg.includes('Unauthorized'))
     return 'El servicio de IA no está disponible ahora. Inténtalo en unos minutos.'
   if (msg.includes('nodo inválido') || msg.includes('JSON inválido'))
     return 'La IA devolvió un resultado inválido. Prueba con una instrucción más específica.'
@@ -65,6 +65,12 @@ export const editNode = async (params: EditNodeParams): Promise<ItineraryNode> =
 
   if (!data || typeof data !== 'object') {
     throw new Error('Respuesta inesperada del servidor')
+  }
+
+  // Verificar si la Edge Function devolvió un error en el body
+  if ('error' in data && typeof data.error === 'string') {
+    logger.error('Error de la Edge Function edit-node', { error: data.error, nodeId: params.nodeId })
+    throw new Error(mapEditError(data.error))
   }
 
   return data as ItineraryNode

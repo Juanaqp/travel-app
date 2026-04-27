@@ -29,7 +29,7 @@ const VALID_CONTEXT: {
   language: 'es',
 }
 
-// Grafo mínimo válido que Gemini devolvería
+// Grafo mínimo válido que OpenAI devolvería
 // nodes se tipifica como Record genérico para facilitar la mutación en tests
 const makeValidGraph = (): {
   id: string
@@ -45,7 +45,7 @@ const makeValidGraph = (): {
   id: 'itin-001',
   tripId: TRIP_ID,
   status: 'draft',
-  generatedBy: 'gemini-2.0-flash',
+  generatedBy: 'gpt-4o-mini',
   userPrompt: 'Viaje cultural a París por 3 días',
   days: [
     {
@@ -254,7 +254,7 @@ const buildCacheKey = (context: typeof VALID_CONTEXT): string => {
   ].join('|')
 }
 
-// Replica la lógica extractJson + validación de callGeminiWithRetry
+// Replica la lógica extractJson + validación de callOpenAIWithRetry
 const extractJson = (rawText: string): string => {
   const mdMatch = rawText.match(/```(?:json)?\s*([\s\S]*?)```/)
   if (mdMatch) return mdMatch[1].trim()
@@ -279,15 +279,15 @@ const parseAndValidateGraph = (rawText: string): ReturnType<typeof graphSchema.s
 
 // ─── Tests: validación del schema ────────────────────────────────────────────
 
-describe('itineraryGraphSchema — validación del JSON de Gemini', () => {
+describe('itineraryGraphSchema — validación del JSON de OpenAI', () => {
   it('acepta un grafo válido completo', () => {
     const result = graphSchema.safeParse(makeValidGraph())
     expect(result.success).toBe(true)
   })
 
-  it('acepta generatedBy="gemini-2.0-flash"', () => {
+  it('acepta generatedBy="gpt-4o-mini"', () => {
     const graph = makeValidGraph()
-    expect(graph.generatedBy).toBe('gemini-2.0-flash')
+    expect(graph.generatedBy).toBe('gpt-4o-mini')
     const result = graphSchema.safeParse(graph)
     expect(result.success).toBe(true)
   })
@@ -372,9 +372,9 @@ describe('parseAndValidateGraph', () => {
   })
 })
 
-// ─── Tests: simulación de respuesta Gemini (limpieza de texto extra) ─────────
+// ─── Tests: simulación de respuesta OpenAI (limpieza de texto extra) ─────────
 
-describe('extractJson — limpieza de respuesta Gemini', () => {
+describe('extractJson — limpieza de respuesta OpenAI', () => {
   it('JSON puro sin envolver se devuelve sin modificar', () => {
     const json = JSON.stringify(makeValidGraph())
     expect(extractJson(json)).toBe(json)
@@ -401,30 +401,30 @@ describe('extractJson — limpieza de respuesta Gemini', () => {
   })
 })
 
-// ─── Tests: mock de fetch hacia Gemini ───────────────────────────────────────
+// ─── Tests: mock de fetch hacia OpenAI ───────────────────────────────────────
 
-describe('simulación de llamada fetch a Gemini', () => {
+describe('simulación de llamada fetch a OpenAI', () => {
   afterEach(() => {
     vi.restoreAllMocks()
   })
 
-  // Construye la respuesta simulada del endpoint de Gemini
-  const makeGeminiResponse = (content: string) =>
+  // Construye la respuesta simulada del endpoint de OpenAI
+  const makeOpenAIResponse = (content: string) =>
     new Response(
-      JSON.stringify({ candidates: [{ content: { parts: [{ text: content }], role: 'model' }, finishReason: 'STOP' }] }),
+      JSON.stringify({ choices: [{ message: { content } }] }),
       { status: 200, headers: { 'Content-Type': 'application/json' } }
     )
 
-  it('JSON válido en candidates[0].content.parts[0].text pasa la validación', async () => {
+  it('JSON válido en choices[0].message.content pasa la validación', async () => {
     const validContent = JSON.stringify(makeValidGraph())
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(makeGeminiResponse(validContent)))
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(makeOpenAIResponse(validContent)))
 
-    const res = await fetch('https://generativelanguage.googleapis.com/v1beta/models', {
+    const res = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
-      body: JSON.stringify({ model: 'gemini-2.0-flash', messages: [], max_tokens: 4096 }),
+      body: JSON.stringify({ model: 'gpt-4o-mini', messages: [], max_tokens: 4096 }),
     })
-    const data = await res.json() as { candidates: Array<{ content: { parts: Array<{ text: string }> } }> }
-    const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text ?? ''
+    const data = await res.json() as { choices: Array<{ message: { content: string } }> }
+    const rawText = data.choices?.[0]?.message?.content ?? ''
     const result = parseAndValidateGraph(rawText)
 
     expect(result.success).toBe(true)
@@ -433,14 +433,14 @@ describe('simulación de llamada fetch a Gemini', () => {
 
   it('JSON inválido activa el flujo de reintento (success=false en primer intento)', async () => {
     const invalidContent = '{"parcial": true, "falta": "campos obligatorios"}'
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(makeGeminiResponse(invalidContent)))
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(makeOpenAIResponse(invalidContent)))
 
-    const res = await fetch('https://generativelanguage.googleapis.com/v1beta/models', {
+    const res = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
-      body: JSON.stringify({ model: 'gemini-2.0-flash', messages: [], max_tokens: 4096 }),
+      body: JSON.stringify({ model: 'gpt-4o-mini', messages: [], max_tokens: 4096 }),
     })
-    const data = await res.json() as { candidates: Array<{ content: { parts: Array<{ text: string }> } }> }
-    const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text ?? ''
+    const data = await res.json() as { choices: Array<{ message: { content: string } }> }
+    const rawText = data.choices?.[0]?.message?.content ?? ''
     const firstAttempt = parseAndValidateGraph(rawText)
 
     // Primer intento falla — se necesita reintento
@@ -448,14 +448,14 @@ describe('simulación de llamada fetch a Gemini', () => {
 
     // Segundo intento con JSON correcto debe pasar
     const validContent = JSON.stringify(makeValidGraph())
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(makeGeminiResponse(validContent)))
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(makeOpenAIResponse(validContent)))
 
-    const res2 = await fetch('https://generativelanguage.googleapis.com/v1beta/models', {
+    const res2 = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
-      body: JSON.stringify({ model: 'gemini-2.0-flash', messages: [], max_tokens: 4096 }),
+      body: JSON.stringify({ model: 'gpt-4o-mini', messages: [], max_tokens: 4096 }),
     })
-    const data2 = await res2.json() as { candidates: Array<{ content: { parts: Array<{ text: string }> } }> }
-    const secondAttempt = parseAndValidateGraph(data2.candidates?.[0]?.content?.parts?.[0]?.text ?? '')
+    const data2 = await res2.json() as { choices: Array<{ message: { content: string } }> }
+    const secondAttempt = parseAndValidateGraph(data2.choices?.[0]?.message?.content ?? '')
     expect(secondAttempt.success).toBe(true)
   })
 
@@ -473,13 +473,13 @@ describe('simulación de llamada fetch a Gemini', () => {
     expect(mockFetch).not.toHaveBeenCalled()
   })
 
-  it('respuesta HTTP 503 de Gemini produce GeminiApiError', async () => {
+  it('respuesta HTTP 503 de OpenAI produce OpenAIApiError', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(
       new Response('Service Unavailable', { status: 503 })
     ))
 
-    const res = await fetch('https://generativelanguage.googleapis.com/v1beta/models', { method: 'POST' })
-    // La Edge Function verifica res.ok y lanza GeminiApiError con status 503
+    const res = await fetch('https://api.openai.com/v1/chat/completions', { method: 'POST' })
+    // La Edge Function verifica res.ok y lanza OpenAIApiError con status 503
     expect(res.ok).toBe(false)
     expect(res.status).toBe(503)
   })

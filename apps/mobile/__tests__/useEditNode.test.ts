@@ -87,7 +87,7 @@ describe('editNode', () => {
     const networkError = new Error('Network request failed')
     mockInvoke.mockResolvedValue({ data: null, error: networkError })
 
-    await expect(editNode(baseParams)).rejects.toThrow('Network request failed')
+    await expect(editNode(baseParams)).rejects.toThrow('No se pudo aplicar el cambio. Inténtalo de nuevo.')
   })
 
   it('lanza error con el mensaje del servidor si data.error está presente', async () => {
@@ -96,7 +96,7 @@ describe('editNode', () => {
       error: null,
     })
 
-    await expect(editNode(baseParams)).rejects.toThrow('Nodo no encontrado en el itinerario')
+    await expect(editNode(baseParams)).rejects.toThrow('El nodo o itinerario no fue encontrado. Recarga la pantalla.')
   })
 
   it('lanza error si la IA devuelve nodo inválido (data.error)', async () => {
@@ -105,21 +105,19 @@ describe('editNode', () => {
       error: null,
     })
 
-    await expect(editNode(baseParams)).rejects.toThrow('La IA devolvió un nodo inválido')
+    await expect(editNode(baseParams)).rejects.toThrow('La IA devolvió un resultado inválido. Prueba con una instrucción más específica.')
   })
 
   it('lanza error si el timeout se agota (error de Supabase)', async () => {
     const timeoutError = new Error('Timeout: la IA tardó demasiado en responder')
     mockInvoke.mockResolvedValue({ data: null, error: timeoutError })
 
-    await expect(editNode(baseParams)).rejects.toThrow('Timeout')
+    await expect(editNode(baseParams)).rejects.toThrow('La IA tardó demasiado. Inténtalo de nuevo.')
   })
 
   it('maneja error si data es null y error también es null', async () => {
     mockInvoke.mockResolvedValue({ data: null, error: null })
 
-    // Debe devolver null como ItineraryNode (tipo cast), sin lanzar
-    const result = await editNode(baseParams)
-    expect(result).toBeNull()
+    await expect(editNode(baseParams)).rejects.toThrow('Respuesta inesperada del servidor')
   })
 })

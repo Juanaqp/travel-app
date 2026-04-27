@@ -30,7 +30,7 @@
 
 ## IA
 
-- **Gemini (Google)** para generación de itinerarios, edición de nodos y parsing de documentos/gastos
+- **OpenAI (GPT-4o-mini)** para generación de itinerarios, edición de nodos y parsing de documentos/gastos
 - API Key solo en Edge Functions (Deno), nunca en el cliente
 - Reintentos automáticos con backoff exponencial
 

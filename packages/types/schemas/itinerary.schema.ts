@@ -1,8 +1,8 @@
 import { z } from 'zod'
 
-// Schema Zod para validar el JSON del itinerario generado por Gemini.
+// Schema Zod para validar el JSON del itinerario generado por OpenAI.
 // Se usa en la Edge Function generate-itinerary antes de persistir el grafo.
-// Gemini genera IDs como strings cortos (no necesariamente UUIDs).
+// OpenAI genera IDs como strings cortos (no necesariamente UUIDs).
 
 // Regex para hora en formato 'HH:mm'
 const timeRegex = /^\d{2}:\d{2}$/

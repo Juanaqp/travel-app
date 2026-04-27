@@ -341,12 +341,12 @@ Deno.serve(async (req: Request) => {
       return jsonResponse({ error: 'Timeout: la IA tardó demasiado en responder' }, 503)
     }
     if (error instanceof SyntaxError) {
-      console.error('[edit-node] SyntaxError al parsear JSON de Gemini:', error.message)
+      console.error('[edit-node] SyntaxError al parsear JSON de OpenAI:', error.message)
       return jsonResponse({ error: 'La IA devolvió JSON inválido' }, 422)
     }
-    // Error de la API de Gemini (fallo HTTP, clave inválida, cuota agotada, contenido vacío, etc.)
-    if (error instanceof Error && error.message.startsWith('Gemini respondió')) {
-      console.error('[edit-node] Error de Gemini:', error.message)
+    // Error de la API de OpenAI (fallo HTTP, clave inválida, cuota agotada, contenido vacío, etc.)
+    if (error instanceof Error && error.message.startsWith('OpenAI respondió')) {
+      console.error('[edit-node] Error de OpenAI:', error.message)
       return jsonResponse({ error: error.message }, 503)
     }
 

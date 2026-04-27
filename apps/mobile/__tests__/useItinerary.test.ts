@@ -33,7 +33,7 @@ const MOCK_GRAPH: ItineraryGraph = {
   id: 'itin-001',
   tripId: 'trip-xyz',
   status: 'draft',
-  generatedBy: 'gemini-2.0-flash',
+  generatedBy: 'gpt-4o-mini',
   userPrompt: 'París romántico',
   days: [
     { id: 'day-1', date: '2026-07-10', dayNumber: 1, nodeIds: ['node-1'] },
@@ -67,7 +67,7 @@ const MOCK_ROW = {
   id: 'itinerary-abc',
   trip_id: 'trip-xyz',
   graph: MOCK_GRAPH,
-  generated_by: 'gemini-2.0-flash',
+  generated_by: 'gpt-4o-mini',
   user_prompt: 'París romántico',
   created_at: '2026-07-10T00:00:00.000Z',
   updated_at: '2026-07-10T00:00:00.000Z',
@@ -108,7 +108,7 @@ describe('fetchLatestItinerary', () => {
     expect(result).toMatchObject({
       id: 'itinerary-abc',
       tripId: 'trip-xyz',
-      generatedBy: 'gemini-2.0-flash',
+      generatedBy: 'gpt-4o-mini',
       userPrompt: 'París romántico',
       createdAt: '2026-07-10T00:00:00.000Z',
     })

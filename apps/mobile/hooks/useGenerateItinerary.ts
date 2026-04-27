@@ -34,9 +34,9 @@ const mapBackendError = (errorMsg: string): string => {
     return 'No pudimos generar un itinerario válido. Intenta con una descripción más detallada.'
   if (errorMsg.includes('Timeout') || errorMsg.includes('tardó demasiado'))
     return 'La generación tardó demasiado. Inténtalo de nuevo.'
-  if (errorMsg.includes('GEMINI_API_KEY'))
+  if (errorMsg.includes('OPENAI_API_KEY'))
     return 'El servicio de IA no está configurado correctamente.'
-  if (errorMsg.includes('Gemini') || errorMsg.includes('disponible'))
+  if (errorMsg.includes('OpenAI') || errorMsg.includes('disponible'))
     return 'El servicio de IA no está disponible. Inténtalo en unos minutos.'
   if (errorMsg.includes('Datos de entrada') || errorMsg.includes('inválidos'))
     return 'Los datos del viaje son incompletos. Verifica las fechas y vuelve a intentarlo.'

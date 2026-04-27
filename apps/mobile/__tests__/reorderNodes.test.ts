@@ -8,7 +8,7 @@ const makeGraph = (): ItineraryGraph => ({
   id: 'itin-001',
   tripId: 'trip-xyz',
   status: 'draft',
-  generatedBy: 'gemini-2.0-flash',
+  generatedBy: 'gpt-4o-mini',
   userPrompt: 'Test',
   days: [
     { id: 'day-1', date: '2026-07-10', dayNumber: 1, nodeIds: ['n1', 'n2', 'n3'] },
