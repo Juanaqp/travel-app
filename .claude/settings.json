@@ -1,55 +1,13 @@
 {
   "permissions": {
     "allow": [
-      "Bash(pnpm test:run)",
-      "Bash(pnpm web *)",
-      "Bash(curl -s http://localhost:8081)",
-      "Bash(npx expo *)",
-      "Bash(echo \"PID: $!\")",
-      "Bash(chmod 644 /Users/juanagramonte/Documents/Desarrollo/Travel-app/260422/TravelApp/apps/mobile/.gitignore)",
-      "Bash(pkill -f \"expo start\")",
-      "Bash(pkill -f \"metro\")",
-      "Bash(sleep 2 echo \"Procesos Expo/Metro terminados\" ls /Users/juanagramonte/Documents/Desarrollo/Travel-app/260422/TravelApp/node_modules/.pnpm/nativewind*/node_modules/nativewind/package.json)",
-      "Bash(find /Users/juanagramonte/Documents/Desarrollo/Travel-app/260422/TravelApp/node_modules/.pnpm/react-native-css-interop@0.1.*/node_modules/react-native-css-interop/package.json)",
-      "Bash(kill -9 10097)",
-      "Bash(node -e \"require.resolve\\('nativewind/metro', {paths: ['/Users/juanagramonte/Documents/Desarrollo/Travel-app/260422/TravelApp/apps/mobile']}\\)\")",
-      "Bash(node -e ' *)",
-      "Bash(xargs kill *)",
-      "Read(//tmp/**)",
-      "Bash(curl -s -o /tmp/page.html -w \"HTTP: %{http_code}\" http://localhost:8081)",
-      "Bash(echo \"EXIT: $?\")",
-      "Read(//private/tmp/**)",
-      "Bash(supabase --version)",
-      "Bash(brew list *)",
-      "Bash(supabase gen *)",
-      "Bash(supabase db *)",
-      "Bash(supabase migration *)",
-      "Bash(pnpm add *)",
-      "Bash(python3 -c \"import sys,json; p=json.load\\(sys.stdin\\); print\\(json.dumps\\({**p.get\\('dependencies',{}\\), **p.get\\('devDependencies',{}\\)}, indent=2\\)\\)\")",
-      "Bash(node -e \"const pkg = require\\('./apps/mobile/package.json'\\); const expoVersion = pkg.dependencies['expo']; console.log\\('expo:', expoVersion\\); console.log\\('expo-router:', pkg.dependencies['expo-router']\\); console.log\\('react-native:', pkg.dependencies['react-native']\\)\")",
-      "Bash(python3 -c \"import sys,json; p=json.load\\(sys.stdin\\); print\\('expo version:', p['version']\\); print\\('peerDeps rn:', p.get\\('peerDependencies', {}\\).get\\('react-native', 'N/A'\\)\\)\")",
-      "Bash(python3 -c \"import sys,json; p=json.load\\(sys.stdin\\); print\\('expo-router version:', p['version']\\); print\\('peerDeps expo:', p.get\\('peerDependencies', {}\\).get\\('expo', 'N/A'\\)\\)\")",
-      "Bash(python3 -c \"import sys,json; p=json.load\\(sys.stdin\\); print\\('reanimated version:', p['version']\\)\")",
-      "Bash(python3 -c \"import sys,json; p=json.load\\(sys.stdin\\); deps = p.get\\('dependencies', {}\\); print\\('react-native dep:', deps.get\\('react-native', 'none'\\)\\); scripts = p.get\\('scripts', {}\\)\")",
-      "Bash(npx expo-doctor *)",
-      "Bash(python3 -c \"import sys,json; p=json.load\\(sys.stdin\\); print\\('react-native installed:', p['version']\\)\")",
-      "Bash(python3 -c \"import sys,json; p=json.load\\(sys.stdin\\); print\\('expo-constants installed:', p['version']\\)\")",
-      "Bash(python3 -c ' *)",
-      "Bash(python3 -c \"import sys,json; p=json.load\\(sys.stdin\\); print\\('expo:', p['dependencies']['expo']\\); print\\('rn:', p['dependencies']['react-native']\\); print\\('router:', p['dependencies']['expo-router']\\)\")",
-      "Bash(git stash *)",
-      "Bash(npx tsc *)",
-      "Bash(node_modules/.bin/tsc --version)",
-      "Bash(ls node_modules/.bin/tsc)",
-      "Bash(node_modules/.bin/tsc --noEmit --strict --jsx react-native --moduleResolution bundler --module esnext --target esnext --paths '{\"@/*\":[\"./*\"],\"@travelapp/types\":[\"../../packages/types\"]}' --baseUrl . --allowJs --esModuleInterop --skipLibCheck stores/useItineraryStore.ts hooks/useGenerateItinerary.ts 'app/\\(app\\)/trips/[id]/_layout.tsx' 'app/\\(app\\)/trips/[id]/index.tsx' 'app/\\(app\\)/trips/[id]/itinerary/generate.tsx')",
-      "Bash(node_modules/.bin/tsc --project /tmp/tscheck.json)",
-      "Bash(supabase functions *)",
-      "Bash(supabase status *)",
-      "Bash(supabase link *)"
+      "Bash(*)",
+      "Read(**)",
+      "Write(**)"
     ],
     "additionalDirectories": [
-      "/Users/juanagramonte/Documents/Exploration/Travel-app/260422/TravelApp/packages/types",
-      "/Users/juanagramonte/Documents/Desarrollo/Travel-app/260422/TravelApp/apps/mobile/app/(app)/trips/[id]",
-      "/Users/juanagramonte/Documents/Desarrollo/Travel-app/260422/TravelApp/apps/mobile/app/(app)/trips"
+      "/Users/juanagramonte/Documents/Desarrollo/Travel-app/260422/TravelApp",
+      "/Users/juanagramonte/Documents/Desarrollo/Travel-app/260422/TravelApp/**"
     ]
   }
 }

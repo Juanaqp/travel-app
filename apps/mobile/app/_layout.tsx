@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { Stack } from 'expo-router'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { StatusBar } from 'expo-status-bar'
+import { GestureHandlerRootView } from 'react-native-gesture-handler'
 import * as Linking from 'expo-linking'
 import { supabase } from '@/lib/supabase'
 import { logger } from '@/lib/logger'
@@ -69,9 +70,11 @@ export default function RootLayout() {
   }, [])
 
   return (
-    <QueryClientProvider client={queryClient}>
-      <StatusBar style="light" />
-      <Stack screenOptions={{ headerShown: false }} />
-    </QueryClientProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <QueryClientProvider client={queryClient}>
+        <StatusBar style="light" />
+        <Stack screenOptions={{ headerShown: false }} />
+      </QueryClientProvider>
+    </GestureHandlerRootView>
   )
 }

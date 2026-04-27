@@ -29,7 +29,7 @@ const VALID_CONTEXT: {
   language: 'es',
 }
 
-// Grafo mínimo válido que Mistral devolvería
+// Grafo mínimo válido que Gemini devolvería
 // nodes se tipifica como Record genérico para facilitar la mutación en tests
 const makeValidGraph = (): {
   id: string
@@ -45,7 +45,7 @@ const makeValidGraph = (): {
   id: 'itin-001',
   tripId: TRIP_ID,
   status: 'draft',
-  generatedBy: 'mistral-small-latest',
+  generatedBy: 'gemini-2.0-flash',
   userPrompt: 'Viaje cultural a París por 3 días',
   days: [
     {
@@ -254,7 +254,7 @@ const buildCacheKey = (context: typeof VALID_CONTEXT): string => {
   ].join('|')
 }
 
-// Replica la lógica extractJson + validación de callMistralWithRetry
+// Replica la lógica extractJson + validación de callGeminiWithRetry
 const extractJson = (rawText: string): string => {
   const mdMatch = rawText.match(/```(?:json)?\s*([\s\S]*?)```/)
   if (mdMatch) return mdMatch[1].trim()
@@ -279,15 +279,15 @@ const parseAndValidateGraph = (rawText: string): ReturnType<typeof graphSchema.s
 
 // ─── Tests: validación del schema ────────────────────────────────────────────
 
-describe('itineraryGraphSchema — validación del JSON de Mistral', () => {
+describe('itineraryGraphSchema — validación del JSON de Gemini', () => {
   it('acepta un grafo válido completo', () => {
     const result = graphSchema.safeParse(makeValidGraph())
     expect(result.success).toBe(true)
   })
 
-  it('acepta generatedBy="mistral-small-latest"', () => {
+  it('acepta generatedBy="gemini-2.0-flash"', () => {
     const graph = makeValidGraph()
-    expect(graph.generatedBy).toBe('mistral-small-latest')
+    expect(graph.generatedBy).toBe('gemini-2.0-flash')
     const result = graphSchema.safeParse(graph)
     expect(result.success).toBe(true)
   })
@@ -372,9 +372,9 @@ describe('parseAndValidateGraph', () => {
   })
 })
 
-// ─── Tests: simulación de respuesta Mistral (limpieza de texto extra) ─────────
+// ─── Tests: simulación de respuesta Gemini (limpieza de texto extra) ─────────
 
-describe('extractJson — limpieza de respuesta Mistral', () => {
+describe('extractJson — limpieza de respuesta Gemini', () => {
   it('JSON puro sin envolver se devuelve sin modificar', () => {
     const json = JSON.stringify(makeValidGraph())
     expect(extractJson(json)).toBe(json)
@@ -401,30 +401,30 @@ describe('extractJson — limpieza de respuesta Mistral', () => {
   })
 })
 
-// ─── Tests: mock de fetch hacia Mistral ───────────────────────────────────────
+// ─── Tests: mock de fetch hacia Gemini ───────────────────────────────────────
 
-describe('simulación de llamada fetch a Mistral', () => {
+describe('simulación de llamada fetch a Gemini', () => {
   afterEach(() => {
     vi.restoreAllMocks()
   })
 
-  // Construye la respuesta simulada del endpoint de Mistral
-  const makeMistralResponse = (content: string) =>
+  // Construye la respuesta simulada del endpoint de Gemini
+  const makeGeminiResponse = (content: string) =>
     new Response(
-      JSON.stringify({ choices: [{ message: { content } }] }),
+      JSON.stringify({ candidates: [{ content: { parts: [{ text: content }], role: 'model' }, finishReason: 'STOP' }] }),
       { status: 200, headers: { 'Content-Type': 'application/json' } }
     )
 
-  it('JSON válido en choices[0].message.content pasa la validación', async () => {
+  it('JSON válido en candidates[0].content.parts[0].text pasa la validación', async () => {
     const validContent = JSON.stringify(makeValidGraph())
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(makeMistralResponse(validContent)))
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(makeGeminiResponse(validContent)))
 
-    const res = await fetch('https://api.mistral.ai/v1/chat/completions', {
+    const res = await fetch('https://generativelanguage.googleapis.com/v1beta/models', {
       method: 'POST',
-      body: JSON.stringify({ model: 'mistral-small-latest', messages: [], max_tokens: 4096 }),
+      body: JSON.stringify({ model: 'gemini-2.0-flash', messages: [], max_tokens: 4096 }),
     })
-    const data = await res.json() as { choices: Array<{ message: { content: string } }> }
-    const rawText = data.choices[0]?.message?.content ?? ''
+    const data = await res.json() as { candidates: Array<{ content: { parts: Array<{ text: string }> } }> }
+    const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text ?? ''
     const result = parseAndValidateGraph(rawText)
 
     expect(result.success).toBe(true)
@@ -433,14 +433,14 @@ describe('simulación de llamada fetch a Mistral', () => {
 
   it('JSON inválido activa el flujo de reintento (success=false en primer intento)', async () => {
     const invalidContent = '{"parcial": true, "falta": "campos obligatorios"}'
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(makeMistralResponse(invalidContent)))
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(makeGeminiResponse(invalidContent)))
 
-    const res = await fetch('https://api.mistral.ai/v1/chat/completions', {
+    const res = await fetch('https://generativelanguage.googleapis.com/v1beta/models', {
       method: 'POST',
-      body: JSON.stringify({ model: 'mistral-small-latest', messages: [], max_tokens: 4096 }),
+      body: JSON.stringify({ model: 'gemini-2.0-flash', messages: [], max_tokens: 4096 }),
     })
-    const data = await res.json() as { choices: Array<{ message: { content: string } }> }
-    const rawText = data.choices[0]?.message?.content ?? ''
+    const data = await res.json() as { candidates: Array<{ content: { parts: Array<{ text: string }> } }> }
+    const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text ?? ''
     const firstAttempt = parseAndValidateGraph(rawText)
 
     // Primer intento falla — se necesita reintento
@@ -448,14 +448,14 @@ describe('simulación de llamada fetch a Mistral', () => {
 
     // Segundo intento con JSON correcto debe pasar
     const validContent = JSON.stringify(makeValidGraph())
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(makeMistralResponse(validContent)))
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(makeGeminiResponse(validContent)))
 
-    const res2 = await fetch('https://api.mistral.ai/v1/chat/completions', {
+    const res2 = await fetch('https://generativelanguage.googleapis.com/v1beta/models', {
       method: 'POST',
-      body: JSON.stringify({ model: 'mistral-small-latest', messages: [], max_tokens: 4096 }),
+      body: JSON.stringify({ model: 'gemini-2.0-flash', messages: [], max_tokens: 4096 }),
     })
-    const data2 = await res2.json() as { choices: Array<{ message: { content: string } }> }
-    const secondAttempt = parseAndValidateGraph(data2.choices[0]?.message?.content ?? '')
+    const data2 = await res2.json() as { candidates: Array<{ content: { parts: Array<{ text: string }> } }> }
+    const secondAttempt = parseAndValidateGraph(data2.candidates?.[0]?.content?.parts?.[0]?.text ?? '')
     expect(secondAttempt.success).toBe(true)
   })
 
@@ -473,13 +473,13 @@ describe('simulación de llamada fetch a Mistral', () => {
     expect(mockFetch).not.toHaveBeenCalled()
   })
 
-  it('respuesta HTTP 503 de Mistral produce MistralApiError', async () => {
+  it('respuesta HTTP 503 de Gemini produce GeminiApiError', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(
       new Response('Service Unavailable', { status: 503 })
     ))
 
-    const res = await fetch('https://api.mistral.ai/v1/chat/completions', { method: 'POST' })
-    // La Edge Function verifica res.ok y lanza MistralApiError con status 503
+    const res = await fetch('https://generativelanguage.googleapis.com/v1beta/models', { method: 'POST' })
+    // La Edge Function verifica res.ok y lanza GeminiApiError con status 503
     expect(res.ok).toBe(false)
     expect(res.status).toBe(503)
   })
@@ -515,7 +515,7 @@ describe('buildCacheKey', () => {
 
 // ─── Tests: simulación de reintento ──────────────────────────────────────────
 
-describe('lógica de reintento en callMistralWithRetry', () => {
+describe('lógica de reintento en callGeminiWithRetry', () => {
   it('si el primer intento devuelve JSON inválido, se requiere reintento', () => {
     const invalidRaw = '{"id": "itin-001"}'  // JSON incompleto
     const firstResult = parseAndValidateGraph(invalidRaw)

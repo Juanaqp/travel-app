@@ -46,7 +46,7 @@ export interface BaseNode {
   name: string
   description: string
   emoji: string
-  aiTip: string           // consejo práctico generado por Claude
+  aiTip: string           // consejo práctico generado por Gemini
   location: NodeLocation
   cost: NodeCost
   userStatus: NodeUserStatus
@@ -167,7 +167,7 @@ export interface ItineraryGraph {
   id: string
   tripId: string
   status: ItineraryStatus
-  generatedBy: string     // modelo usado: 'claude-sonnet-4-5'
+  generatedBy: string     // modelo usado: 'gemini-2.0-flash'
   userPrompt: string      // prompt original del usuario
   days: ItineraryDay[]
   nodes: Record<string, ItineraryNode>  // mapa nodeId → nodo

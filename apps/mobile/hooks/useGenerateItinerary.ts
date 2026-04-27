@@ -34,9 +34,9 @@ const mapBackendError = (errorMsg: string): string => {
     return 'No pudimos generar un itinerario válido. Intenta con una descripción más detallada.'
   if (errorMsg.includes('Timeout') || errorMsg.includes('tardó demasiado'))
     return 'La generación tardó demasiado. Inténtalo de nuevo.'
-  if (errorMsg.includes('MISTRAL_API_KEY'))
+  if (errorMsg.includes('GEMINI_API_KEY'))
     return 'El servicio de IA no está configurado correctamente.'
-  if (errorMsg.includes('Mistral') || errorMsg.includes('disponible'))
+  if (errorMsg.includes('Gemini') || errorMsg.includes('disponible'))
     return 'El servicio de IA no está disponible. Inténtalo en unos minutos.'
   if (errorMsg.includes('Datos de entrada') || errorMsg.includes('inválidos'))
     return 'Los datos del viaje son incompletos. Verifica las fechas y vuelve a intentarlo.'
@@ -71,9 +71,18 @@ export const useGenerateItinerary = (): UseGenerateItineraryResult => {
         })
 
         if (fnError) {
-          // En Supabase JS v2, data contiene el body del error del backend en algunos casos
-          const backendMessage: string =
-            (data as { error?: string } | null)?.error ?? fnError.message
+          // En Supabase JS v2, data siempre es null para respuestas no-2xx.
+          // El body del error HTTP está en fnError.context (el objeto Response).
+          let backendMessage = fnError.message
+          try {
+            const httpError = fnError as unknown as { context?: { json?: () => Promise<{ error?: string }> } }
+            if (typeof httpError.context?.json === 'function') {
+              const body = await httpError.context.json()
+              if (body?.error) backendMessage = body.error
+            }
+          } catch {
+            // body no es JSON o ya fue consumido — usar mensaje del SDK
+          }
           logger.error('Edge Function generate-itinerary falló', {
             error: fnError.message,
             backendMessage,

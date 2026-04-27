@@ -1,6 +1,7 @@
 import { View, Text, ScrollView, Pressable, Image } from 'react-native'
 import { useLocalSearchParams, router } from 'expo-router'
 import { useTrip } from '@/hooks/useTrips'
+import { useItinerary } from '@/hooks/useItinerary'
 import { LoadingSkeleton } from '@/components/LoadingSkeleton'
 import { EmptyState } from '@/components/EmptyState'
 import { Badge } from '@/components/Badge'
@@ -143,6 +144,7 @@ const TripDetailHeader = ({ trip }: TripHeaderProps) => {
 export default function TripDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>()
   const { data: trip, isLoading, error, refetch } = useTrip(id ?? '')
+  const { data: savedItinerary } = useItinerary(id ?? '')
 
   if (isLoading) {
     return (
@@ -182,11 +184,13 @@ export default function TripDetailScreen() {
     {
       emoji: '🗺️',
       title: 'Itinerario',
-      subtitle:
-        trip.status === 'planning'
-          ? 'Genera tu itinerario con IA'
-          : 'Ver tu itinerario del viaje',
-      onPress: () => router.push(`/(app)/trips/${id}/itinerary/generate` as never),
+      subtitle: savedItinerary
+        ? `${savedItinerary.graph.meta.totalDays} días · ${savedItinerary.graph.meta.totalNodes} actividades`
+        : 'Genera tu itinerario con IA',
+      onPress: () =>
+        savedItinerary
+          ? router.push(`/(app)/trips/${id}/itinerary` as never)
+          : router.push(`/(app)/trips/${id}/itinerary/generate` as never),
       accessibilityLabel: 'Módulo de itinerario del viaje',
     },
     {

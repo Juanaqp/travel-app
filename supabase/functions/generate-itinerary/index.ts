@@ -1,20 +1,20 @@
 // Edge Function: generate-itinerary
 // POST /functions/v1/generate-itinerary
-// Genera el itinerario inicial con Mistral AI para un viaje dado.
-// Incluye caché de 72h, reintentos automáticos y registro de uso.
+// Genera el itinerario inicial con OpenAI para un viaje dado.
+// Incluye normalización de salida del modelo, caché de 72h, reintentos y registro de uso.
 
 import { createClient } from 'npm:@supabase/supabase-js@2'
 import { z } from 'npm:zod'
 
 // ─── Constantes ───────────────────────────────────────────────────────────────
 
-const TIMEOUT_MS = 120_000  // Aumentado a 2 minutos para dar más tiempo a la IA
-const MAX_RETRIES = 3
+const TIMEOUT_MS = 200_000  // 200s: permite 2 llamadas de ~60-80s c/u + margen
+const MAX_RETRIES = 2       // Reducido: cada llamada tarda ~60s, 3 superaban el timeout
 const CACHE_TTL_HOURS = 72
-const MODEL = 'mistral-small-latest'
-const MAX_TOKENS = 8000
+const MODEL = 'gpt-4o-mini'
+const MAX_OUTPUT_TOKENS = 8192
 const SCHEMA_VERSION = '2.1.0'
-const MISTRAL_API_URL = 'https://api.mistral.ai/v1/chat/completions'
+const OPENAI_BASE_URL = 'https://api.openai.com/v1'
 
 // ─── Schema de entrada ────────────────────────────────────────────────────────
 
@@ -40,24 +40,58 @@ const requestSchema = z.object({
 type RequestBody = z.infer<typeof requestSchema>
 type RequestContext = RequestBody['context']
 
-// ─── Schema Zod del ItineraryGraph (inline para Deno) ────────────────────────
-// Espejo del schema en packages/types/schemas/itinerary.schema.ts
+// ─── Schema Zod tolerante del ItineraryGraph ──────────────────────────────────
+// Estrategia: z.preprocess y .catch() absorben variaciones comunes del modelo.
+// La capa normalizeItinerary (antes del parse) corrige los casos más frecuentes.
 
 const timeRe = /^\d{2}:\d{2}$/
 const dateRe = /^\d{4}-\d{2}-\d{2}$/
 
+// Acepta string u objeto {name?, address?} y lo convierte a string
+const flexLocationString = z.preprocess(
+  (val) => {
+    if (typeof val === 'string') return val
+    if (val && typeof val === 'object') {
+      const o = val as Record<string, unknown>
+      return String(o.name ?? o.address ?? '')
+    }
+    return ''
+  },
+  z.string()
+)
+
+// Acepta cualquier string parseable como fecha; si falla o falta, usa ahora
+const flexDatetime = z.preprocess(
+  (val) => {
+    if (!val) return new Date().toISOString()
+    const d = new Date(String(val))
+    return isNaN(d.getTime()) ? new Date().toISOString() : d.toISOString()
+  },
+  z.string()
+)
+
+// Acepta fecha ISO (con o sin tiempo) y extrae solo YYYY-MM-DD
+const flexDate = z.preprocess(
+  (val) => {
+    if (!val) return undefined
+    const m = String(val).match(/^(\d{4}-\d{2}-\d{2})/)
+    return m ? m[1] : String(val)
+  },
+  z.string().regex(dateRe)
+)
+
 const nodeCostSchema = z.object({
   amount: z.number().min(0).optional(),
-  currency: z.string().length(3).optional(),
+  currency: z.string().optional(),
   isIncluded: z.boolean().optional(),
-})
+}).passthrough().catch({})
 
 const nodeLocationSchema = z.object({
   address: z.string().optional(),
   lat: z.number().min(-90).max(90).optional(),
   lng: z.number().min(-180).max(180).optional(),
   placeId: z.string().optional(),
-})
+}).passthrough().catch({})
 
 const baseNodeSchema = z.object({
   id: z.string().min(1),
@@ -67,15 +101,16 @@ const baseNodeSchema = z.object({
   durationMinutes: z.number().int().min(1),
   endTime: z.string().regex(timeRe),
   name: z.string().min(1).max(200),
-  description: z.string().max(1000).default(''),
-  emoji: z.string().max(10).default('📍'),
-  aiTip: z.string().max(500).default(''),
+  description: z.string().max(1000).catch(''),
+  emoji: z.string().max(10).catch('📍'),
+  aiTip: z.string().max(500).catch(''),
   location: nodeLocationSchema,
   cost: nodeCostSchema,
-  userStatus: z.enum(['pending', 'approved', 'rejected', 'modified']).default('pending'),
-  isAiGenerated: z.boolean().default(true),
-  isUserModified: z.boolean().default(false),
-  createdAt: z.string().datetime(),
+  // Valores del sistema — inyectados desde backend, .catch() garantiza el valor correcto
+  userStatus: z.enum(['pending', 'approved', 'rejected', 'modified']).catch('pending'),
+  isAiGenerated: z.boolean().catch(true),
+  isUserModified: z.boolean().catch(false),
+  createdAt: flexDatetime,
 })
 
 const itineraryNodeSchema = z.discriminatedUnion('type', [
@@ -88,28 +123,40 @@ const itineraryNodeSchema = z.discriminatedUnion('type', [
   baseNodeSchema.extend({
     type: z.literal('restaurant'),
     cuisine: z.string().optional(),
-    priceRange: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4)]).optional(),
+    // El modelo a veces envía "$", "$$" u otros strings — convertir a número 1-4
+    priceRange: z.preprocess(
+      (val) => {
+        if (val === undefined || val === null) return undefined
+        if (typeof val === 'number') return [1, 2, 3, 4].includes(val) ? val : undefined
+        if (typeof val === 'string') {
+          const n = parseInt(val.replace(/\D/g, '') || '0', 10)
+          return [1, 2, 3, 4].includes(n) ? n : val.length >= 1 && val.length <= 4 ? val.length : undefined
+        }
+        return undefined
+      },
+      z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4)]).optional()
+    ).optional(),
     reservationRequired: z.boolean().optional(),
-    reservationUrl: z.string().url().optional(),
+    reservationUrl: z.string().optional(),  // Sin .url() — el modelo genera URLs no estándar
   }),
   baseNodeSchema.extend({
     type: z.literal('transport'),
-    transportMode: z.enum(['metro', 'bus', 'taxi', 'walking', 'ferry', 'train', 'car']).optional(),
-    fromLocation: z.string().optional(),
-    toLocation: z.string().optional(),
+    transportMode: z.enum(['metro', 'bus', 'taxi', 'walking', 'ferry', 'train', 'car']).catch('walking').optional(),
+    fromLocation: flexLocationString.optional(),  // Acepta objeto o string
+    toLocation: flexLocationString.optional(),    // Acepta objeto o string
     lineNumber: z.string().optional(),
   }),
   baseNodeSchema.extend({
     type: z.literal('hotel_checkin'),
     hotelName: z.string().optional(),
-    checkOutDate: z.string().regex(dateRe).optional(),
+    checkOutDate: flexDate.optional(),
     confirmationNumber: z.string().optional(),
   }),
   baseNodeSchema.extend({
     type: z.literal('activity'),
     category: z.string().optional(),
     bookingRequired: z.boolean().optional(),
-    bookingUrl: z.string().url().optional(),
+    bookingUrl: z.string().optional(),  // Sin .url()
   }),
   baseNodeSchema.extend({
     type: z.literal('free_time'),
@@ -117,7 +164,7 @@ const itineraryNodeSchema = z.discriminatedUnion('type', [
   }),
   baseNodeSchema.extend({
     type: z.literal('note'),
-    noteType: z.enum(['tip', 'warning', 'info']).optional(),
+    noteType: z.enum(['tip', 'warning', 'info']).catch('info').optional(),
   }),
   baseNodeSchema.extend({
     type: z.literal('flight'),
@@ -135,9 +182,9 @@ const itineraryNodeSchema = z.discriminatedUnion('type', [
 const itineraryGraphSchema = z.object({
   id: z.string().min(1),
   tripId: z.string().uuid(),
-  status: z.enum(['draft', 'reviewing', 'approved', 'saved']),
+  status: z.enum(['draft', 'reviewing', 'approved', 'saved']).catch('draft'),
   generatedBy: z.string().min(1),
-  userPrompt: z.string().min(10),
+  userPrompt: z.string().min(1),
   days: z
     .array(
       z.object({
@@ -151,26 +198,82 @@ const itineraryGraphSchema = z.object({
     )
     .min(1),
   nodes: z.record(z.string(), itineraryNodeSchema),
-  edges: z.array(
-    z.object({
-      id: z.string().min(1),
-      fromNodeId: z.string().min(1),
-      toNodeId: z.string().min(1),
-      type: z.enum(['sequential', 'transport', 'optional']),
-      durationMinutes: z.number().int().min(0).optional(),
-    })
-  ),
+  edges: z
+    .array(
+      z.object({
+        id: z.string().min(1),
+        fromNodeId: z.string().min(1),
+        toNodeId: z.string().min(1),
+        type: z.enum(['sequential', 'transport', 'optional']).catch('sequential'),
+        durationMinutes: z.number().int().min(0).optional(),
+      })
+    )
+    .default([]),
   meta: z.object({
     totalDays: z.number().int().min(1),
     totalNodes: z.number().int().min(0),
     estimatedTotalCost: z.number().min(0).optional(),
-    currency: z.string().length(3).optional(),
+    currency: z.string().optional(),
     generationDurationMs: z.number().int().optional(),
     version: z.string(),
   }),
 })
 
 type ItineraryGraph = z.infer<typeof itineraryGraphSchema>
+
+// ─── Normalización de salida del modelo ───────────────────────────────────────
+// Corre ANTES de la validación Zod. Corrige errores comunes del modelo
+// sin alterar la semántica del itinerario.
+
+function normalizeItinerary(data: Record<string, unknown>): Record<string, unknown> {
+  // Garantizar estructura mínima del grafo
+  if (typeof data.nodes !== 'object' || data.nodes === null || Array.isArray(data.nodes)) {
+    data.nodes = {}
+  }
+  if (!Array.isArray(data.days)) data.days = []
+  if (!Array.isArray(data.edges)) data.edges = []
+
+  const now = new Date().toISOString()
+  const nodes = data.nodes as Record<string, unknown>
+
+  for (const nodeId of Object.keys(nodes)) {
+    const node = nodes[nodeId]
+    if (typeof node !== 'object' || node === null) continue
+    const n = node as Record<string, unknown>
+
+    // Inyectar createdAt si falta o tiene formato inválido
+    if (!n.createdAt || typeof n.createdAt !== 'string' || isNaN(new Date(n.createdAt).getTime())) {
+      n.createdAt = now
+    }
+
+    // fromLocation / toLocation: objeto → string (error común en modelos de lenguaje)
+    for (const field of ['fromLocation', 'toLocation']) {
+      if (n[field] !== undefined && typeof n[field] !== 'string') {
+        const loc = n[field] as Record<string, unknown>
+        n[field] = String(loc?.name ?? loc?.address ?? '')
+      }
+    }
+
+    // Eliminar campos URL vacíos o no-string que fallarían el schema
+    for (const field of ['reservationUrl', 'bookingUrl']) {
+      if (n[field] !== undefined) {
+        if (typeof n[field] !== 'string' || (n[field] as string).trim() === '') {
+          delete n[field]
+        }
+      }
+    }
+
+    // Valores críticos del sistema — siempre inyectados desde backend, nunca del modelo
+    n.userStatus = 'pending'
+    n.isAiGenerated = true
+    n.isUserModified = false
+
+    nodes[nodeId] = n
+  }
+
+  data.nodes = nodes
+  return data
+}
 
 // ─── Helpers HTTP ─────────────────────────────────────────────────────────────
 
@@ -192,86 +295,85 @@ const buildSystemPrompt = (language: 'es' | 'en'): string => {
   const tipLang = language === 'es' ? 'español' : 'inglés'
   return `Eres un experto planificador de viajes. Generas itinerarios detallados y realistas.
 
-CRÍTICO: Tu respuesta debe ser EXCLUSIVAMENTE JSON válido. Sin texto previo, sin markdown, sin \`\`\`json, sin explicaciones. Solo el objeto JSON. Return ONLY valid JSON. No explanation, no markdown.
+REGLA ABSOLUTA: Responde EXCLUSIVAMENTE con un objeto JSON válido. Sin texto previo, sin markdown, sin \`\`\`json, sin explicaciones.
+Si no puedes generar el itinerario, responde SOLO: {"error":"invalid_structure"}
 
-El JSON debe cumplir exactamente este schema TypeScript:
+El JSON debe cumplir exactamente este schema:
 
 interface ItineraryGraph {
   id: string                    // ID corto único, ej: "itin-001"
-  tripId: string                // UUID del viaje — usar el que se provee en el contexto
-  status: "draft"               // siempre "draft" al generar
-  generatedBy: "mistral-small-latest"
-  userPrompt: string            // el pedido original del usuario sin modificar
+  tripId: string                // UUID del viaje — copiar EXACTAMENTE el del contexto
+  status: "draft"
+  generatedBy: "gpt-4o-mini"
+  userPrompt: string
   days: ItineraryDay[]
-  nodes: Record<string, ItineraryNode>  // objeto nodeId → nodo, NO array
+  nodes: Record<string, ItineraryNode>  // OBJETO clave→nodo, NUNCA array
   edges: ItineraryEdge[]
   meta: ItineraryMeta
 }
 
 interface ItineraryDay {
-  id: string            // ej: "day-1", "day-2"
+  id: string            // "day-1", "day-2"...
   date: string          // "YYYY-MM-DD"
-  dayNumber: number     // 1, 2, 3...
-  title?: string        // ej: "Día 1 — Llegada a París"
+  dayNumber: number
+  title?: string
   destinationCity?: string
-  nodeIds: string[]     // IDs de los nodos del día en orden cronológico
+  nodeIds: string[]     // IDs en orden cronológico
 }
 
-// Campos comunes — todos los nodos deben incluirlos
 interface BaseNode {
-  id: string            // ej: "node-001", "node-002" — único en todo el itinerario
-  type: string          // discriminante — ver tipos abajo
-  dayId: string         // ID del ItineraryDay al que pertenece
-  order: number         // posición 0-based dentro del día
-  time: string          // "HH:mm" — hora local del destino
+  id: string            // único: "node-001", "node-002"...
+  type: string          // ver tipos abajo
+  dayId: string
+  order: number         // 0-based
+  time: string          // "HH:mm" OBLIGATORIO — ej: "09:00"
   durationMinutes: number
-  endTime: string       // "HH:mm" — time + durationMinutes calculado correctamente
-  name: string          // nombre específico del lugar o actividad
-  description: string   // descripción útil de 1-2 frases
-  emoji: string         // emoji representativo
-  aiTip: string         // consejo práctico en ${tipLang} — específico y útil
+  endTime: string       // "HH:mm" calculado — ej: "10:30"
+  name: string
+  description: string
+  emoji: string
+  aiTip: string         // consejo práctico en ${tipLang}
   location: { address?: string; lat?: number; lng?: number }
   cost: { amount?: number; currency?: string; isIncluded?: boolean }
-  userStatus: "pending"   // siempre "pending"
+  userStatus: "pending"
   isAiGenerated: true
   isUserModified: false
-  createdAt: string     // ISO 8601 con timezone, ej: "2026-04-22T00:00:00.000Z"
+  createdAt: string     // OBLIGATORIO — ISO 8601: "2026-04-25T00:00:00.000Z"
 }
 
-// Tipos específicos (uno de estos — el campo type es el discriminante):
-// type: "poi"          — category?, openingHours?, rating?
-// type: "restaurant"  — cuisine?, priceRange? (1|2|3|4), reservationRequired?
-// type: "transport"   — transportMode? ("metro"|"bus"|"taxi"|"walking"|"ferry"|"train"|"car"), fromLocation?, toLocation?, lineNumber?
-// type: "hotel_checkin" — hotelName?, checkOutDate? ("YYYY-MM-DD"), confirmationNumber?
-// type: "activity"    — category?, bookingRequired?
-// type: "free_time"   — suggestions? (string[])
-// type: "note"        — noteType? ("tip"|"warning"|"info")
-// type: "flight"      — flightNumber?, airline?, departureAirport?, arrivalAirport?
+Tipos específicos:
+- poi: category?, openingHours?, rating?
+- restaurant: cuisine?, priceRange? (NÚMERO 1|2|3|4), reservationRequired?, reservationUrl?
+- transport: transportMode? ("metro"|"bus"|"taxi"|"walking"|"ferry"|"train"|"car"), fromLocation?, toLocation?, lineNumber?
+- hotel_checkin: hotelName?, checkOutDate? ("YYYY-MM-DD"), confirmationNumber?
+- activity: category?, bookingRequired?, bookingUrl?
+- free_time: suggestions? (string[])
+- note: noteType? ("tip"|"warning"|"info")
+- flight: flightNumber?, airline?, departureAirport?, arrivalAirport?
 
 interface ItineraryEdge {
-  id: string            // ej: "edge-001"
-  fromNodeId: string    // nodeId origen
-  toNodeId: string      // nodeId destino
-  type: "sequential" | "transport" | "optional"
-  durationMinutes?: number
+  id: string; fromNodeId: string; toNodeId: string
+  type: "sequential"|"transport"|"optional"; durationMinutes?: number
 }
 
 interface ItineraryMeta {
-  totalDays: number
-  totalNodes: number
-  estimatedTotalCost?: number
-  currency?: string     // ISO 4217, ej: "EUR"
-  version: "${SCHEMA_VERSION}"   // siempre "${SCHEMA_VERSION}"
+  totalDays: number; totalNodes: number
+  estimatedTotalCost?: number; currency?: string
+  version: "${SCHEMA_VERSION}"
 }
 
-REGLAS OBLIGATORIAS:
-1. Un nodo de transporte entre ubicaciones distantes (>10 min a pie)
-2. Al menos un restaurante por día
-3. Ritmo de actividades: slow=4-5/día, moderate=6-7/día, intense=8-10/día
-4. endTime calculado correctamente: si time="09:00" y durationMinutes=90, endTime="10:30"
-5. Los IDs de nodes en nodeIds del día deben corresponder exactamente con las claves en el objeto nodes
-6. nodes es un objeto Record (claves=IDs), NO un array
-7. Todos los nodos del día aparecen en nodeIds y en nodes`
+TIPOS CRÍTICOS — respetar exactamente:
+1. fromLocation y toLocation → STRING, NUNCA objeto. Correcto: "Shibuya Station". Incorrecto: {"name":"Shibuya"}
+2. priceRange → NÚMERO entero (1, 2, 3 o 4), NUNCA string como "$" o "$$"
+3. createdAt → OBLIGATORIO en cada nodo, formato ISO: "2026-04-25T00:00:00.000Z"
+4. time / endTime → "HH:mm" exacto — "09:00", "10:30"
+5. nodes → Record<string, Node> (objeto), NUNCA array
+
+REGLAS DE CONTENIDO:
+- Al menos 1 nodo transport entre zonas distantes (>10 min a pie)
+- Al menos 1 restaurant por día
+- slow=4-5 nodos/día · moderate=6-7/día · intense=8-10/día
+- nodeIds del día deben coincidir exactamente con las claves de nodes`
 }
 
 // ─── User prompt ──────────────────────────────────────────────────────────────
@@ -325,8 +427,9 @@ const buildUserPrompt = (userRequest: string, context: RequestContext): string =
   }
 
   prompt +=
-    `\nAsegúrate de usar exactamente tripId="${context.tripId}" en el JSON generado.` +
-    `\n\nRESPONDE ÚNICAMENTE CON EL OBJETO JSON. Sin explicaciones, sin markdown, sin texto antes o después.`
+    `\nUSA exactamente tripId="${context.tripId}" en el JSON.` +
+    `\nRecuerda: fromLocation y toLocation son STRINGS, createdAt es OBLIGATORIO en cada nodo.` +
+    `\n\nRESPONDE ÚNICAMENTE CON EL OBJETO JSON. Sin explicaciones, sin markdown.`
 
   return prompt
 }
@@ -334,7 +437,6 @@ const buildUserPrompt = (userRequest: string, context: RequestContext): string =
 // ─── Caché de itinerarios ─────────────────────────────────────────────────────
 
 const buildCacheKey = (context: RequestContext): string => {
-  // Clave basada en los parámetros que determinan el tipo de itinerario
   const parts = [
     context.dates.start,
     context.dates.end,
@@ -384,27 +486,26 @@ const incrementAiUsage = async (supabase: SupabaseClient, userId: string): Promi
   await supabase.rpc('increment_ai_msgs', { user_id_param: userId })
 }
 
-// ─── Tipos de la respuesta de Mistral ────────────────────────────────────────
+// ─── Tipos de la respuesta de OpenAI ─────────────────────────────────────────
 
-interface MistralMessage {
+interface OpenAIMessage {
   role: 'system' | 'user' | 'assistant'
   content: string
 }
 
-interface MistralResponse {
+interface OpenAIResponse {
   choices: Array<{
-    message: {
-      content: string
-    }
+    message: { role: string; content: string }
+    finish_reason?: string  // 'stop' = completo · 'length' = truncado
   }>
 }
 
 // ─── Errores tipados ──────────────────────────────────────────────────────────
 
-class MistralApiError extends Error {
+class OpenAIApiError extends Error {
   constructor(message: string) {
     super(message)
-    this.name = 'MistralApiError'
+    this.name = 'OpenAIApiError'
   }
 }
 
@@ -419,20 +520,36 @@ class ZodValidationError extends Error {
 
 // ─── Extracción de JSON de la respuesta del modelo ───────────────────────────
 
-// Limpia texto extra que el modelo pueda añadir antes/después del JSON
 const extractJson = (rawText: string): string => {
-  // Extraer de bloque markdown ```json ... ```
   const mdMatch = rawText.match(/```(?:json)?\s*([\s\S]*?)```/)
   if (mdMatch) return mdMatch[1].trim()
 
-  // Extraer el primer objeto JSON del texto si hay texto extra alrededor
   const objectMatch = rawText.match(/\{[\s\S]*\}/)
   return objectMatch ? objectMatch[0] : rawText
 }
 
-// ─── Llamada a Mistral con reintento automático ───────────────────────────────
+// ─── Construcción del mensaje de corrección para reintentos ──────────────────
 
-const callMistralWithRetry = async (
+const buildCorrectionPrompt = (issues: z.ZodIssue[]): string => {
+  const lines = issues.slice(0, 8).map((e) => {
+    const path = e.path.join('.') || '(raíz)'
+    return `- ${path}: ${e.message}`
+  })
+
+  return (
+    `El JSON tiene ${issues.length} errores de validación. Corrige SOLO estos campos:\n\n` +
+    lines.join('\n') +
+    `\n\nRecuerda:\n` +
+    `- fromLocation y toLocation deben ser STRINGS, no objetos\n` +
+    `- createdAt es OBLIGATORIO en cada nodo (ISO 8601: "2026-04-25T00:00:00.000Z")\n` +
+    `- priceRange debe ser número 1, 2, 3 o 4\n` +
+    `\nDevuelve el JSON COMPLETO corregido. Sin explicaciones, sin markdown.`
+  )
+}
+
+// ─── Llamada a OpenAI con reintento inteligente ───────────────────────────────
+
+const callOpenAIWithRetry = async (
   apiKey: string,
   userRequest: string,
   context: RequestContext,
@@ -440,90 +557,121 @@ const callMistralWithRetry = async (
 ): Promise<ItineraryGraph> => {
   const systemPrompt = buildSystemPrompt(context.language)
   const userPrompt = buildUserPrompt(userRequest, context)
-
-  const messages: MistralMessage[] = [
-    { role: 'system', content: systemPrompt },
-    { role: 'user', content: userPrompt },
-  ]
+  const url = `${OPENAI_BASE_URL}/chat/completions`
 
   let lastZodError: z.ZodIssue[] | null = null
+  let lastRawText: string | null = null  // Respuesta anterior del modelo para multi-turn
 
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     console.log(`[generate-itinerary] Intento ${attempt}/${MAX_RETRIES} para tripId: ${context.tripId}`)
-    // Añadir mensaje de corrección en reintentos
-    if (attempt > 1 && lastZodError) {
-      const errorSummary = lastZodError
-        .slice(0, 5)
-        .map((e) => `  - ${e.path.join('.')}: ${e.message}`)
-        .join('\n')
 
-      messages.push({
-        role: 'user',
-        content:
-          `El JSON que generaste tiene errores de validación. Corrígelos y devuelve SOLO el JSON corregido:\n\n${errorSummary}\n\nDevuelve únicamente el JSON válido sin ningún texto adicional.`,
-      })
+    // Si el error anterior fue truncación (JSON.parse falló), reiniciar el historial
+    // para no acumular una respuesta incompleta y consumir tokens del contexto.
+    const isJsonParseError =
+      lastZodError?.length === 1 && lastZodError[0].message === 'La respuesta no es JSON válido'
+
+    // Construir historial de mensajes
+    const messages: OpenAIMessage[] = [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userPrompt },
+    ]
+
+    if (attempt > 1 && lastZodError && !isJsonParseError && lastRawText) {
+      // Multi-turn: incluir respuesta anterior y prompt de corrección
+      messages.push({ role: 'assistant', content: lastRawText })
+      messages.push({ role: 'user', content: buildCorrectionPrompt(lastZodError) })
     }
 
     let rawText: string
     try {
-      console.log(`[generate-itinerary] Enviando request a Mistral API...`)
-      const res = await fetch(MISTRAL_API_URL, {
+      console.log(`[generate-itinerary] Enviando request a OpenAI API...`)
+      const res = await fetch(url, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${apiKey}`,
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`,
         },
         body: JSON.stringify({
-            model: MODEL,
-            messages,
-            max_tokens: MAX_TOKENS,
-            response_format: { type: 'json_object' },
-          }),
+          model: MODEL,
+          messages,
+          response_format: { type: 'json_object' },
+          max_tokens: MAX_OUTPUT_TOKENS,
+        }),
         signal,
       })
 
       if (!res.ok) {
         const errorBody = await res.text()
-        throw new MistralApiError(`Mistral respondió con status ${res.status}: ${errorBody}`)
+        throw new OpenAIApiError(`OpenAI respondió con status ${res.status}: ${errorBody}`)
       }
 
-      const data = await res.json() as MistralResponse
-      rawText = data.choices[0]?.message?.content?.trim() ?? ''
+      const data = (await res.json()) as OpenAIResponse
+      const choice = data.choices?.[0]
+      rawText = choice?.message?.content?.trim() ?? ''
+      const finishReason = choice?.finish_reason ?? 'UNKNOWN'
 
-      if (!rawText) throw new MistralApiError('Mistral devolvió contenido vacío')
-      console.log(`[generate-itinerary] Respuesta recibida de Mistral, longitud: ${rawText.length} chars`)
+      if (!rawText) throw new OpenAIApiError('OpenAI devolvió contenido vacío')
+      lastRawText = rawText  // Guardar para el reintento multi-turn si este intento falla
+      console.log(
+        `[generate-itinerary] Respuesta OpenAI — longitud: ${rawText.length} chars, finishReason: ${finishReason}`
+      )
+      if (finishReason === 'length') {
+        console.warn(
+          `[attempt ${attempt}] finish_reason=length — respuesta truncada (${MAX_OUTPUT_TOKENS} tokens)`
+        )
+      }
     } catch (err) {
-      if (err instanceof MistralApiError) throw err
-      throw new MistralApiError(`Fallo al llamar a la API de Mistral: ${(err as Error).message}`)
+      if (err instanceof OpenAIApiError) throw err
+      throw new OpenAIApiError(`Fallo al llamar a la API de OpenAI: ${(err as Error).message}`)
     }
 
+    // ── Paso 1: extraer JSON de texto con posible markdown o texto extra ────
     const cleanJson = extractJson(rawText)
 
+    // ── Paso 2: parsear JSON ──────────────────────────────────────────────────
     let parsed: unknown
     try {
       parsed = JSON.parse(cleanJson)
     } catch {
-      console.error(`[attempt ${attempt}] JSON inválido — primeros 500 chars:`, rawText.slice(0, 500))
+      console.error(`[attempt ${attempt}] JSON no parseable — longitud: ${rawText.length} chars`)
+      console.error(`[attempt ${attempt}] Inicio (500 chars):`, rawText.slice(0, 500))
       lastZodError = [
-        {
-          code: 'custom',
-          message: 'La respuesta no es JSON válido',
-          path: [],
-        } as z.ZodIssue,
+        { code: 'custom', message: 'La respuesta no es JSON válido', path: [] } as z.ZodIssue,
       ]
-      // Añadir la respuesta incorrecta al historial para que el modelo la corrija
-      messages.push({ role: 'assistant', content: rawText })
+      // No agregar la respuesta truncada al historial — evita consumir tokens extra
       continue
     }
 
-    const validation = itineraryGraphSchema.safeParse(parsed)
+    // ── Paso 3: detectar respuesta de error explícita del modelo ─────────────
+    if (
+      typeof parsed === 'object' &&
+      parsed !== null &&
+      (parsed as Record<string, unknown>).error === 'invalid_structure'
+    ) {
+      console.error(`[attempt ${attempt}] El modelo indicó invalid_structure`)
+      lastZodError = [
+        { code: 'custom', message: 'Modelo indicó invalid_structure', path: [] } as z.ZodIssue,
+      ]
+      continue
+    }
+
+    // ── Paso 4: normalizar antes de validar ───────────────────────────────────
+    console.log(`[attempt ${attempt}] JSON parseado (inicio 800 chars):`, cleanJson.slice(0, 800))
+    const normalized = normalizeItinerary(parsed as Record<string, unknown>)
+
+    // ── Paso 5: validar con Zod ───────────────────────────────────────────────
+    const validation = itineraryGraphSchema.safeParse(normalized)
     if (validation.success) {
+      console.log(`[attempt ${attempt}] Validación Zod exitosa`)
       return validation.data
     }
 
     lastZodError = validation.error.issues
-    // Añadir la respuesta incorrecta para el reintento
-    messages.push({ role: 'assistant', content: rawText })
+    console.error(
+      `[attempt ${attempt}] Zod inválido — ${validation.error.issues.length} errores:`,
+      JSON.stringify(validation.error.issues.slice(0, 8))
+    )
+    console.error(`[attempt ${attempt}] JSON fin (500 chars):`, cleanJson.slice(-500))
   }
 
   throw new ZodValidationError(lastZodError ?? [])
@@ -532,7 +680,6 @@ const callMistralWithRetry = async (
 // ─── Handler principal ────────────────────────────────────────────────────────
 
 Deno.serve(async (req: Request) => {
-  // CORS preflight
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
@@ -544,6 +691,8 @@ Deno.serve(async (req: Request) => {
   const timeoutController = new AbortController()
   const timeoutId = setTimeout(() => timeoutController.abort(), TIMEOUT_MS)
 
+  let parseResult: z.SafeParseReturnType<z.infer<typeof requestSchema>, z.ZodError> | undefined
+
   try {
     // 1. Validar entrada
     let body: unknown
@@ -553,7 +702,7 @@ Deno.serve(async (req: Request) => {
       return jsonResponse({ error: 'Body JSON inválido' }, 400)
     }
 
-    const parseResult = requestSchema.safeParse(body)
+    parseResult = requestSchema.safeParse(body)
     if (!parseResult.success) {
       return jsonResponse(
         { error: 'Datos de entrada inválidos', details: parseResult.error.flatten() },
@@ -578,7 +727,7 @@ Deno.serve(async (req: Request) => {
     } = await supabase.auth.getUser()
     if (authError || !user) return jsonResponse({ error: 'No autorizado' }, 401)
 
-    // 3. Buscar en caché — si existe, evita la llamada a Mistral
+    // 3. Buscar en caché
     console.log(`[generate-itinerary] Verificando caché para tripId: ${context.tripId}`)
     const cacheKey = buildCacheKey(context)
     const cached = await lookupCache(supabase, cacheKey)
@@ -587,30 +736,31 @@ Deno.serve(async (req: Request) => {
       clearTimeout(timeoutId)
       return jsonResponse(cached, 200)
     }
-    console.log(`[generate-itinerary] No encontrado en caché, llamando a Mistral`)
+    console.log(`[generate-itinerary] No encontrado en caché, llamando a OpenAI`)
 
-    // 4. Verificar que la API key está configurada
-    const mistralApiKey = Deno.env.get('MISTRAL_API_KEY')
-    if (!mistralApiKey) {
+    // 4. Verificar API key
+    const openaiApiKey = Deno.env.get('OPENAI_API_KEY')
+    if (!openaiApiKey) {
       clearTimeout(timeoutId)
-      return jsonResponse({ error: 'MISTRAL_API_KEY no configurada' }, 500)
+      return jsonResponse({ error: 'OPENAI_API_KEY no configurada' }, 500)
     }
 
-    // 5. Llamar a Mistral con reintento automático
-    console.log(`[generate-itinerary] Iniciando generación con Mistral para tripId: ${context.tripId}`)
+    // 5. Llamar a OpenAI con normalización + validación + reintento
+    console.log(`[generate-itinerary] Iniciando generación con OpenAI para tripId: ${context.tripId}`)
     const startMs = Date.now()
 
-    const graph = await callMistralWithRetry(
-      mistralApiKey,
+    const graph = await callOpenAIWithRetry(
+      openaiApiKey,
       userRequest,
       context,
       timeoutController.signal
     )
 
-    console.log(`[generate-itinerary] Generación completada en ${Date.now() - startMs}ms`)
+    const durationMs = Date.now() - startMs
+    console.log(`[generate-itinerary] Generación completada en ${durationMs}ms`)
 
-    // Inyectar duración de generación (no la tenía Mistral al construir el JSON)
-    graph.meta.generationDurationMs = Date.now() - startMs
+    // Inyectar duración desde el backend (el modelo no la conoce al generar el JSON)
+    graph.meta.generationDurationMs = durationMs
 
     // 6. Guardar en caché
     await saveToCache(supabase, cacheKey, graph)
@@ -624,15 +774,23 @@ Deno.serve(async (req: Request) => {
     clearTimeout(timeoutId)
 
     if (error instanceof DOMException && error.name === 'AbortError') {
-      console.error(`[generate-itinerary] Timeout alcanzado para tripId: ${parseResult?.data?.context?.tripId || 'unknown'}`)
+      console.error(
+        `[generate-itinerary] Timeout alcanzado para tripId: ${parseResult?.data?.context?.tripId || 'unknown'}`
+      )
       return jsonResponse({ error: 'Timeout: el servicio de IA tardó demasiado' }, 503)
     }
-    if (error instanceof MistralApiError) {
-      console.error(`[generate-itinerary] Error de API Mistral para tripId: ${parseResult?.data?.context?.tripId || 'unknown'}`, error.message)
-      return jsonResponse({ error: error.message }, 503)
+    if (error instanceof OpenAIApiError) {
+      console.error(
+        `[generate-itinerary] Error de API OpenAI para tripId: ${parseResult?.data?.context?.tripId || 'unknown'}`,
+        (error as OpenAIApiError).message
+      )
+      return jsonResponse({ error: (error as OpenAIApiError).message }, 503)
     }
     if (error instanceof ZodValidationError) {
-      console.error(`[generate-itinerary] Error de validación Zod para tripId: ${parseResult?.data?.context?.tripId || 'unknown'}`, error.issues)
+      console.error(
+        `[generate-itinerary] Error de validación Zod para tripId: ${parseResult?.data?.context?.tripId || 'unknown'}`,
+        error.issues
+      )
       return jsonResponse(
         {
           error: 'El itinerario generado no cumple el schema tras los reintentos',
@@ -642,7 +800,10 @@ Deno.serve(async (req: Request) => {
       )
     }
 
-    console.error(`[generate-itinerary] Error inesperado para tripId: ${parseResult?.data?.context?.tripId || 'unknown'}`, error)
+    console.error(
+      `[generate-itinerary] Error inesperado para tripId: ${parseResult?.data?.context?.tripId || 'unknown'}`,
+      error
+    )
     return jsonResponse({ error: 'Error interno del servidor' }, 500)
   }
 })

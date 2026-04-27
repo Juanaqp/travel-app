@@ -6,12 +6,14 @@ import {
   Pressable,
   Modal,
   TextInput,
+  ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
 } from 'react-native'
 import { useLocalSearchParams, router } from 'expo-router'
 import { useItineraryStore } from '@/stores/useItineraryStore'
 import { useApproveItinerary } from '@/hooks/useApproveItinerary'
+import { editNode } from '@/hooks/useEditNode'
 import { ItineraryNodeCard, TransferBadge } from '@/components/ItineraryNodeCard'
 import { Button } from '@/components/Button'
 import { logger } from '@/lib/logger'
@@ -23,17 +25,15 @@ interface EditNodeForm {
   name: string
   time: string
   durationMinutes: string
-  aiInstruction: string
 }
 
 const EMPTY_EDIT_FORM: EditNodeForm = {
   name: '',
   time: '',
   durationMinutes: '',
-  aiInstruction: '',
 }
 
-// ─── Modal de edición de nodo ─────────────────────────────────────────────────
+// ─── Modal de edición manual de nodo ─────────────────────────────────────────
 
 interface EditNodeModalProps {
   node: ItineraryNode | null
@@ -81,7 +81,7 @@ const EditNodeModal = ({ node, form, onChange, onConfirm, onCancel }: EditNodeMo
           </View>
 
           {/* Hora y duración en fila */}
-          <View className="mb-4 flex-row gap-3">
+          <View className="mb-6 flex-row gap-3">
             <View className="flex-1">
               <Text className="mb-1.5 text-sm font-medium text-slate-300">Hora (HH:mm)</Text>
               <View className="rounded-xl border border-slate-700 bg-slate-800 px-4 py-3">
@@ -116,25 +116,6 @@ const EditNodeModal = ({ node, form, onChange, onConfirm, onCancel }: EditNodeMo
             </View>
           </View>
 
-          {/* Instrucción para la IA */}
-          <Text className="mb-1.5 text-sm font-medium text-slate-300">
-            Pedir a la IA que cambie esto{' '}
-            <Text className="font-normal text-slate-500">(opcional)</Text>
-          </Text>
-          <View className="mb-6 rounded-xl border border-slate-700 bg-slate-800 px-4 py-3">
-            <TextInput
-              value={form.aiInstruction}
-              onChangeText={(v) => onChange('aiInstruction', v)}
-              placeholder="Ej: Cambia esto por un parque más tranquilo..."
-              placeholderTextColor="#64748b"
-              multiline
-              numberOfLines={2}
-              maxLength={300}
-              accessibilityLabel="Instrucción para la IA"
-              style={{ color: '#f1f5f9', fontSize: 14, minHeight: 56, textAlignVertical: 'top' }}
-            />
-          </View>
-
           {/* Acciones */}
           <View className="gap-3">
             <Button
@@ -156,6 +137,108 @@ const EditNodeModal = ({ node, form, onChange, onConfirm, onCancel }: EditNodeMo
   )
 }
 
+// ─── Modal de edición asistida por IA (draft) ─────────────────────────────────
+
+interface AIEditModalProps {
+  node: ItineraryNode | null
+  isLoading: boolean
+  error: string | null
+  onClose: () => void
+  onSubmit: (instruction: string) => void
+}
+
+const AIEditModal = ({ node, isLoading, error, onClose, onSubmit }: AIEditModalProps) => {
+  const [instruction, setInstruction] = useState('')
+
+  if (!node) return null
+
+  const handleSubmit = () => {
+    if (instruction.trim().length < 5) return
+    onSubmit(instruction.trim())
+  }
+
+  return (
+    <Modal visible transparent animationType="slide" onRequestClose={onClose}>
+      <Pressable
+        className="flex-1 justify-end bg-black/60"
+        onPress={onClose}
+        accessibilityLabel="Cerrar modal"
+      >
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+          <Pressable onPress={() => {}} className="rounded-t-2xl bg-slate-800 p-6">
+            <View className="mb-4 flex-row items-center gap-2">
+              <Text className="text-lg font-bold text-white">✨ Editar con IA</Text>
+            </View>
+
+            {/* Resumen del nodo actual */}
+            <View className="mb-4 rounded-xl border border-slate-700 bg-slate-900 px-3 py-2">
+              <Text className="text-xs text-slate-500">Nodo a modificar</Text>
+              <Text className="mt-0.5 font-semibold text-white">
+                {node.emoji} {node.name}
+              </Text>
+              <Text className="text-xs text-slate-500">
+                {node.time} · {node.durationMinutes} min
+              </Text>
+            </View>
+
+            {/* Instrucción para la IA */}
+            <Text className="mb-2 text-xs font-semibold text-slate-400">
+              ¿Qué quieres cambiar? *
+            </Text>
+            <View className="mb-2 rounded-xl border border-slate-700 bg-slate-900 px-3 py-2">
+              <TextInput
+                value={instruction}
+                onChangeText={setInstruction}
+                placeholder="Ej: cámbialo por algo más barato, añade el horario real, actualiza la descripción..."
+                placeholderTextColor="#64748b"
+                multiline
+                numberOfLines={3}
+                maxLength={500}
+                editable={!isLoading}
+                style={{ color: '#f1f5f9', fontSize: 14, minHeight: 80, textAlignVertical: 'top' }}
+              />
+            </View>
+            <Text className="mb-4 text-right text-xs text-slate-600">
+              {instruction.length}/500
+            </Text>
+
+            {/* Error de la IA */}
+            {error ? (
+              <View className="mb-4 rounded-xl border border-red-500/30 bg-red-950/40 px-3 py-2">
+                <Text className="text-xs text-red-400">{error}</Text>
+              </View>
+            ) : null}
+
+            <View className="flex-row gap-3">
+              <Pressable
+                onPress={onClose}
+                disabled={isLoading}
+                className="flex-1 items-center rounded-xl bg-slate-700 py-3 active:bg-slate-600 disabled:opacity-50"
+              >
+                <Text className="font-semibold text-white">Cancelar</Text>
+              </Pressable>
+              <Pressable
+                onPress={handleSubmit}
+                disabled={isLoading || instruction.trim().length < 5}
+                className="flex-1 items-center rounded-xl bg-indigo-600 py-3 active:bg-indigo-700 disabled:opacity-50"
+              >
+                {isLoading ? (
+                  <View className="flex-row items-center gap-2">
+                    <ActivityIndicator size="small" color="#fff" />
+                    <Text className="font-semibold text-white">Procesando...</Text>
+                  </View>
+                ) : (
+                  <Text className="font-semibold text-white">✨ Aplicar cambio</Text>
+                )}
+              </Pressable>
+            </View>
+          </Pressable>
+        </KeyboardAvoidingView>
+      </Pressable>
+    </Modal>
+  )
+}
+
 // ─── Pantalla de revisión ─────────────────────────────────────────────────────
 
 export default function ReviewItineraryScreen() {
@@ -167,6 +250,9 @@ export default function ReviewItineraryScreen() {
   const [activeDayIndex, setActiveDayIndex] = useState(0)
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null)
   const [editForm, setEditForm] = useState<EditNodeForm>(EMPTY_EDIT_FORM)
+  const [aiEditingNode, setAiEditingNode] = useState<ItineraryNode | null>(null)
+  const [aiEditError, setAiEditError] = useState<string | null>(null)
+  const [isAiEditing, setIsAiEditing] = useState(false)
 
   // Sin draft — redirigir a la pantalla de generación
   if (!draftGraph) {
@@ -231,7 +317,6 @@ export default function ReviewItineraryScreen() {
       name: node.name,
       time: node.time,
       durationMinutes: String(node.durationMinutes),
-      aiInstruction: '',
     })
     setEditingNodeId(node.id)
   }
@@ -253,15 +338,30 @@ export default function ReviewItineraryScreen() {
       }
     })
 
-    if (editForm.aiInstruction.trim()) {
-      logger.info('Instrucción IA registrada para nodo', {
-        nodeId: editingNodeId,
-        instruction: editForm.aiInstruction.trim(),
-      })
-    }
-
     setEditingNodeId(null)
     setEditForm(EMPTY_EDIT_FORM)
+  }
+
+  const handleAIEditSubmit = async (instruction: string) => {
+    if (!aiEditingNode) return
+    setIsAiEditing(true)
+    setAiEditError(null)
+    try {
+      const updatedNode = await editNode({
+        nodeId: aiEditingNode.id,
+        instruction,
+        nodeData: aiEditingNode,
+      })
+      updateNode(updatedNode.id, () => updatedNode)
+      setAiEditingNode(null)
+      logger.info('Nodo del draft editado con IA', { nodeId: updatedNode.id })
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Error al editar con IA'
+      setAiEditError(msg)
+      logger.error('Error al editar nodo del draft con IA', { err, nodeId: aiEditingNode.id })
+    } finally {
+      setIsAiEditing(false)
+    }
   }
 
   const handleApproveItinerary = async () => {
@@ -396,6 +496,7 @@ export default function ReviewItineraryScreen() {
                 onApprove={() => handleApproveNode(node.id)}
                 onReject={() => handleRejectNode(node.id)}
                 onEdit={() => handleOpenEdit(node)}
+                onAIEdit={() => { setAiEditError(null); setAiEditingNode(node) }}
               />
             </View>
           )
@@ -452,7 +553,7 @@ export default function ReviewItineraryScreen() {
         </View>
       </View>
 
-      {/* Modal de edición */}
+      {/* Modal de edición manual */}
       {editingNode ? (
         <EditNodeModal
           node={editingNode}
@@ -465,6 +566,17 @@ export default function ReviewItineraryScreen() {
             setEditingNodeId(null)
             setEditForm(EMPTY_EDIT_FORM)
           }}
+        />
+      ) : null}
+
+      {/* Modal de edición con IA */}
+      {aiEditingNode ? (
+        <AIEditModal
+          node={aiEditingNode}
+          isLoading={isAiEditing}
+          error={aiEditError}
+          onClose={() => { setAiEditingNode(null); setAiEditError(null) }}
+          onSubmit={handleAIEditSubmit}
         />
       ) : null}
     </View>

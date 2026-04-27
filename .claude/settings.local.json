@@ -1,19 +1,13 @@
 {
   "permissions": {
     "allow": [
-      "Bash(mkdir -p .github/workflows)",
-      "Bash(mkdir -p docs/phases)",
-      "Bash(mkdir -p \"apps/mobile/app/\\(auth\\)\")",
-      "Bash(mkdir -p \"apps/mobile/app/\\(app\\)/\\(tabs\\)\")",
-      "Bash(mkdir -p apps/mobile/components)",
-      "Bash(pnpm install *)",
-      "Bash(npm --version)",
-      "Bash(npx --version)",
-      "Bash(npm install *)",
-      "Bash(export PATH=\"/usr/local/bin:$HOME/.npm-packages/bin:$PATH\")",
-      "Bash(pnpm --version)",
-      "Bash(npm view *)",
-      "Bash(pnpm typecheck *)"
+      "Bash(*)",
+      "Read(**)",
+      "Write(**)"
+    ],
+    "additionalDirectories": [
+      "/Users/juanagramonte/Documents/Desarrollo/Travel-app/260422/TravelApp",
+      "/Users/juanagramonte/Documents/Desarrollo/Travel-app/260422/TravelApp/**"
     ]
   }
 }

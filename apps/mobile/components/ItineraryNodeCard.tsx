@@ -78,16 +78,25 @@ export const TransferBadge = ({ node }: TransferBadgeProps) => {
 
 interface ItineraryNodeCardProps {
   node: ItineraryNode
-  onApprove: () => void
-  onReject: () => void
+  // mode review: botones aprobar/editar/quitar (pantalla de revisión del draft)
+  // mode view: solo botones editar/IA (pantalla de itinerario guardado)
+  mode?: 'review' | 'view'
+  onApprove?: () => void
+  onReject?: () => void
   onEdit: () => void
+  onAIEdit?: () => void
+  // Slot para el handle de drag & drop (Parte B)
+  dragHandle?: React.ReactNode
 }
 
 export const ItineraryNodeCard = ({
   node,
+  mode = 'review',
   onApprove,
   onReject,
   onEdit,
+  onAIEdit,
+  dragHandle,
 }: ItineraryNodeCardProps) => {
   const [isTipExpanded, setIsTipExpanded] = useState(false)
 
@@ -107,7 +116,7 @@ export const ItineraryNodeCard = ({
     <View
       className={`rounded-xl border p-4 ${borderClass} ${bgClass} ${isRejected ? 'opacity-50' : 'opacity-100'}`}
     >
-      {/* Cabecera: emoji + nombre + hora */}
+      {/* Cabecera: emoji + nombre + hora + drag handle */}
       <View className="flex-row items-start gap-3">
         <Text className="text-2xl" accessibilityElementsHidden>
           {node.emoji}
@@ -129,8 +138,11 @@ export const ItineraryNodeCard = ({
           </View>
         </View>
 
-        {/* Badges de tipo y costo */}
+        {/* Badges de tipo y costo + drag handle */}
         <View className="items-end gap-1">
+          {dragHandle ? (
+            <View className="mb-1">{dragHandle}</View>
+          ) : null}
           <View className="rounded-md bg-slate-700 px-2 py-0.5">
             <Text className="text-xs text-slate-300">
               {NODE_TYPE_LABELS[node.type]}
@@ -176,43 +188,85 @@ export const ItineraryNodeCard = ({
         <Text className="mt-2 text-xs text-amber-500">✏️ Modificado por ti</Text>
       ) : null}
 
-      {/* Botones de acción */}
-      <View className="mt-3 flex-row gap-2">
-        <Pressable
-          onPress={onApprove}
-          accessibilityRole="button"
-          accessibilityLabel="Aprobar actividad"
-          className={`flex-1 items-center rounded-lg py-2 ${
-            node.userStatus === 'approved'
-              ? 'bg-green-700'
-              : 'bg-slate-700 active:bg-green-900'
-          }`}
-        >
-          <Text className="text-xs font-semibold text-white">✓ Aprobar</Text>
-        </Pressable>
+      {/* Botones de acción — distintos según el modo */}
+      {mode === 'review' ? (
+        <View className="mt-3 gap-2">
+          {/* Primera fila: Aprobar y Quitar */}
+          <View className="flex-row gap-2">
+            <Pressable
+              onPress={onApprove}
+              accessibilityRole="button"
+              accessibilityLabel="Aprobar actividad"
+              className={`flex-1 items-center rounded-lg py-2 ${
+                node.userStatus === 'approved'
+                  ? 'bg-green-700'
+                  : 'bg-slate-700 active:bg-green-900'
+              }`}
+            >
+              <Text className="text-xs font-semibold text-white">✓ Aprobar</Text>
+            </Pressable>
 
-        <Pressable
-          onPress={onEdit}
-          accessibilityRole="button"
-          accessibilityLabel="Editar actividad"
-          className="flex-1 items-center rounded-lg bg-slate-700 py-2 active:bg-slate-600"
-        >
-          <Text className="text-xs font-semibold text-white">✏️ Editar</Text>
-        </Pressable>
+            <Pressable
+              onPress={onReject}
+              accessibilityRole="button"
+              accessibilityLabel="Eliminar actividad del itinerario"
+              className={`flex-1 items-center rounded-lg py-2 ${
+                node.userStatus === 'rejected'
+                  ? 'bg-red-800'
+                  : 'bg-slate-700 active:bg-red-900'
+              }`}
+            >
+              <Text className="text-xs font-semibold text-white">✕ Quitar</Text>
+            </Pressable>
+          </View>
 
-        <Pressable
-          onPress={onReject}
-          accessibilityRole="button"
-          accessibilityLabel="Eliminar actividad del itinerario"
-          className={`flex-1 items-center rounded-lg py-2 ${
-            node.userStatus === 'rejected'
-              ? 'bg-red-800'
-              : 'bg-slate-700 active:bg-red-900'
-          }`}
-        >
-          <Text className="text-xs font-semibold text-white">✕ Quitar</Text>
-        </Pressable>
-      </View>
+          {/* Segunda fila: Editar manual y Editar con IA */}
+          <View className="flex-row gap-2">
+            <Pressable
+              onPress={onEdit}
+              accessibilityRole="button"
+              accessibilityLabel="Editar actividad manualmente"
+              className="flex-1 items-center rounded-lg bg-slate-700 py-2 active:bg-slate-600"
+            >
+              <Text className="text-xs font-semibold text-white">✏️ Editar</Text>
+            </Pressable>
+
+            {onAIEdit ? (
+              <Pressable
+                onPress={onAIEdit}
+                accessibilityRole="button"
+                accessibilityLabel="Editar actividad con IA"
+                className="flex-1 items-center rounded-lg bg-indigo-900/60 py-2 active:bg-indigo-800"
+              >
+                <Text className="text-xs font-semibold text-indigo-300">✨ IA</Text>
+              </Pressable>
+            ) : null}
+          </View>
+        </View>
+      ) : (
+        // Modo view: edición manual + edición asistida por IA
+        <View className="mt-3 flex-row gap-2">
+          <Pressable
+            onPress={onEdit}
+            accessibilityRole="button"
+            accessibilityLabel="Editar actividad manualmente"
+            className="flex-1 items-center rounded-lg bg-slate-700 py-2 active:bg-slate-600"
+          >
+            <Text className="text-xs font-semibold text-white">✏️ Editar</Text>
+          </Pressable>
+
+          {onAIEdit ? (
+            <Pressable
+              onPress={onAIEdit}
+              accessibilityRole="button"
+              accessibilityLabel="Editar actividad con IA"
+              className="flex-1 items-center rounded-lg bg-indigo-900/60 py-2 active:bg-indigo-800"
+            >
+              <Text className="text-xs font-semibold text-indigo-300">✨ IA</Text>
+            </Pressable>
+          ) : null}
+        </View>
+      )}
     </View>
   )
 }

@@ -114,7 +114,7 @@ const MOCK_DRAFT_GRAPH: ItineraryGraph = {
   id: 'draft-001',
   tripId: 'trip-xyz',
   status: 'reviewing',
-  generatedBy: 'mistral-small-latest',
+  generatedBy: 'gemini-2.0-flash',
   userPrompt: 'París romántico — museos y gastronomía',
   days: [
     {
@@ -183,7 +183,7 @@ describe('approveItinerary', () => {
         user_id: MOCK_USER.id,
         status: 'approved',
         graph: MOCK_DRAFT_GRAPH,
-        generated_by: 'mistral-small-latest',
+        generated_by: 'gemini-2.0-flash',
         user_prompt: 'París romántico — museos y gastronomía',
       })
     )

@@ -30,7 +30,7 @@
 
 ## IA
 
-- **Claude (Anthropic)** para generación de itinerarios y parsing de documentos/gastos
+- **Gemini (Google)** para generación de itinerarios, edición de nodos y parsing de documentos/gastos
 - API Key solo en Edge Functions (Deno), nunca en el cliente
 - Reintentos automáticos con backoff exponencial
 
