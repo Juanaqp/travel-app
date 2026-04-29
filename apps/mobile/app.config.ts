@@ -14,7 +14,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     backgroundColor: '#0F172A',
   },
   ios: {
-    supportsTablet: false,
+    supportsTablet: true,
     bundleIdentifier: 'com.travelapp.mobile',
   },
   android: {
@@ -34,6 +34,15 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
       'expo-splash-screen',
       {
         backgroundColor: '#0F172A',
+      },
+    ],
+    'expo-sqlite',
+    [
+      'expo-notifications',
+      {
+        icon: './assets/notification-icon.png',
+        color: '#6366F1',
+        sounds: [],
       },
     ],
   ],

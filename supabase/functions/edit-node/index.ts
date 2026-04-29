@@ -5,6 +5,8 @@
 
 import { createClient } from 'npm:@supabase/supabase-js@2'
 import { z } from 'npm:zod@3'
+import { errorResponse } from '../_shared/errors.ts'
+import { checkAndIncrementUsage, RateLimitExceededError } from '../_shared/rateLimiter.ts'
 
 // ─── Constantes ───────────────────────────────────────────────────────────────
 
@@ -231,7 +233,18 @@ Deno.serve(async (req: Request) => {
     }
     console.log(`[edit-node] Paso 2 OK — userId=${user.id}`)
 
-    // 3. Obtener el nodo a editar (desde BD o desde nodeData directo)
+    // 3. Verificar límite de uso de IA antes de llamar a OpenAI
+    try {
+      await checkAndIncrementUsage(user.id, supabase)
+    } catch (rateLimitErr) {
+      clearTimeout(timeoutId)
+      if (rateLimitErr instanceof RateLimitExceededError) {
+        return errorResponse('RATE_LIMIT_EXCEEDED', rateLimitErr.message, 429)
+      }
+      throw rateLimitErr
+    }
+
+    // 4. Obtener el nodo a editar (desde BD o desde nodeData directo)
     let currentNode: unknown
     let graph: StoredGraph | null = null
 

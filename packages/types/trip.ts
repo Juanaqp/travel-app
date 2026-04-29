@@ -35,6 +35,7 @@ export interface Trip {
   pace?: TravelPace
   budget?: BudgetTier
   baseCurrency: string     // ISO 4217: 'USD', 'EUR', 'GBP'
+  totalBudget?: number     // presupuesto total en baseCurrency — opcional
   deletedAt?: string | null
   createdAt: string
   updatedAt: string
@@ -51,6 +52,8 @@ export interface CreateTripInput {
   pace?: TravelPace
   budget?: BudgetTier
   baseCurrency?: string
+  coverImageBase64?: string   // imagen de portada en base64 — se sube a trip-covers bucket
+  coverImageMimeType?: string // MIME type de la portada: 'image/jpeg', 'image/png', 'image/webp'
 }
 
 // Input de actualización — todos los campos opcionales excepto id
@@ -65,5 +68,8 @@ export interface UpdateTripInput {
   pace?: TravelPace
   budget?: BudgetTier
   baseCurrency?: string
+  totalBudget?: number
   status?: TripStatus
+  coverImageBase64?: string   // imagen de portada en base64 — reemplaza la portada existente
+  coverImageMimeType?: string // MIME type de la portada
 }

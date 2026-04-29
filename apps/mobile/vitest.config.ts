@@ -10,6 +10,31 @@ export default defineConfig({
     setupFiles: ['./vitest.setup.ts'],
     include: ['**/__tests__/**/*.test.{ts,tsx}', '**/*.test.{ts,tsx}'],
     exclude: ['node_modules', '.expo', 'dist'],
+    coverage: {
+      provider: 'v8',
+      reporter: ['text', 'lcov', 'html'],
+      reportsDirectory: './coverage',
+      exclude: [
+        'node_modules/**',
+        '.expo/**',
+        'dist/**',
+        '**/__tests__/**',
+        '**/*.config.{ts,js}',
+        '**/*.d.ts',
+        '**/vitest.setup.ts',
+        'app/**',            // pantallas de Expo Router — testear con E2E
+        'components/**',     // componentes UI puros — testear con Maestro E2E
+        'constants/**',
+        'assets/**',
+        'lib/offline/db.ts', // módulo nativo SQLite — sin API mockeada completa
+      ],
+      thresholds: {
+        lines: 55,
+        functions: 55,
+        branches: 70,
+        statements: 55,
+      },
+    },
   },
   resolve: {
     alias: {

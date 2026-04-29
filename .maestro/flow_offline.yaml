@@ -1,0 +1,56 @@
+appId: com.travelapp.mobile
+name: Modo offline — visualización y sincronización pendiente
+tags:
+  - offline
+  - sync
+
+---
+# Flujo: cargar datos online → desconectar → verificar datos disponibles → reconectar → sync
+
+- launchApp
+
+# ─── Cargar datos en línea ────────────────────────────────────────────────────
+- assertVisible: "Mis Viajes"
+- assertVisible: "Tokio 2026"
+
+# ─── Simular desconexión (airplane mode) ─────────────────────────────────────
+- setAirplaneMode: true
+- waitForAnimationToEnd
+
+# ─── Los datos del caché SQLite deben seguir visibles ────────────────────────
+- assertVisible: "Tokio 2026"
+- assertNotVisible: "Error de conexión"
+
+# ─── Abrir el viaje sin conexión ─────────────────────────────────────────────
+- tapOn:
+    text: "Tokio 2026"
+- waitForAnimationToEnd
+- assertVisible: "Tokio 2026"   # detalle del viaje cargado desde SQLite
+
+# ─── Navegar a gastos — deben estar disponibles offline ──────────────────────
+- tapOn:
+    text: "Gastos"
+- waitForAnimationToEnd
+- assertVisible: "Gastos del viaje"
+
+# ─── Intentar crear un gasto offline — debe encolarse ────────────────────────
+- tapOn:
+    id: "btn-add-expense"
+- tapOn:
+    id: "input-expense-title"
+- inputText: "Taxi aeropuerto"
+- tapOn:
+    id: "input-expense-amount"
+- inputText: "3500"
+- tapOn:
+    text: "Guardar"
+- waitForAnimationToEnd
+- assertVisible: "Taxi aeropuerto"    # aparece en la UI optimistamente
+
+# ─── Reconectar — la sincronización debe ejecutarse automáticamente ──────────
+- setAirplaneMode: false
+- waitForAnimationToEnd:
+    timeout: 10000
+
+# ─── El indicador de sync pendiente debe desaparecer ─────────────────────────
+- assertNotVisible: "Pendiente de sync"

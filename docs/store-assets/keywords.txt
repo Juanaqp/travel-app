@@ -1,0 +1,20 @@
+# App Store Keywords (máx. 100 caracteres exactos, separados por coma)
+# El App Store cuenta exactamente 100 caracteres — sin espacios después de coma
+
+viajes,itinerario,vacaciones,IA,gastos,documentos,presupuesto,planificador,vuelos,hotel,pasaporte
+
+# Caracteres usados: 96/100 ✓
+# Nota: no incluir el nombre de la app ni palabras competidoras (se penaliza)
+# No incluir palabras ya en el título/subtítulo (se indexan automáticamente)
+
+---
+
+# Google Play — Frases clave de búsqueda sugeridas
+# (Google indexa la descripción, no hay campo de keywords. Incluir estas frases
+# de forma natural en la descripción para mejorar el ranking de búsqueda)
+
+1. planificador de viajes con inteligencia artificial
+2. organizar documentos de viaje
+3. control de gastos en viajes con conversión de moneda
+4. itinerario de viaje personalizado con IA
+5. app de viajes offline sin internet

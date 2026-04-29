@@ -1,0 +1,50 @@
+appId: com.travelapp.mobile
+name: Generar itinerario con IA y aprobarlo
+tags:
+  - itinerary
+  - ai
+  - smoke
+
+---
+# Flujo: abrir viaje → generar itinerario → revisar nodos → aprobar
+
+- launchApp
+
+# ─── Abrir el viaje existente ────────────────────────────────────────────────
+- tapOn:
+    text: "Tokio 2026"
+- waitForAnimationToEnd
+- assertVisible: "Generar itinerario"
+
+# ─── Formulario de generación ────────────────────────────────────────────────
+- tapOn:
+    text: "Generar itinerario"
+- assertVisible: "¿Qué tipo de viaje buscas?"
+- tapOn:
+    id: "input-user-prompt"
+- inputText: "Quiero conocer los templos históricos, probar ramen auténtico y hacer un día de senderismo"
+- tapOn:
+    text: "Generar"
+
+# ─── Esperar respuesta de la IA (puede tardar) ───────────────────────────────
+- waitForAnimationToEnd:
+    timeout: 30000
+- assertVisible: "Tu itinerario está listo"
+
+# ─── Revisión de nodos ────────────────────────────────────────────────────────
+- assertVisible: "Día 1"
+- scrollDown
+- assertVisible: "Aprobar todo"
+
+# ─── Aprobar el itinerario completo ──────────────────────────────────────────
+- tapOn:
+    text: "Aprobar todo"
+- waitForAnimationToEnd
+
+# ─── Confirmar en el modal ────────────────────────────────────────────────────
+- tapOn:
+    text: "Confirmar"
+- waitForAnimationToEnd
+
+# ─── El itinerario queda guardado ─────────────────────────────────────────────
+- assertVisible: "Itinerario guardado"

@@ -1,12 +1,17 @@
-import { useEffect } from 'react'
-import { Stack } from 'expo-router'
+import { useEffect, useState } from 'react'
+import { Redirect, Stack, usePathname } from 'expo-router'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { StatusBar } from 'expo-status-bar'
 import { GestureHandlerRootView } from 'react-native-gesture-handler'
+import AsyncStorage from '@react-native-async-storage/async-storage'
 import * as Linking from 'expo-linking'
 import { supabase } from '@/lib/supabase'
 import { logger } from '@/lib/logger'
 import { useAuthStore } from '@/stores/useAuthStore'
+import { useTimezoneStore } from '@/stores/useTimezoneStore'
+import { getDb } from '@/lib/offline/db'
+import { ErrorBoundary } from '@/components/ErrorBoundary'
+import { Toast } from '@/components/Toast'
 import '../global.css'
 
 const queryClient = new QueryClient({
@@ -35,8 +40,33 @@ function parseDeepLinkTokens(url: string): { accessToken: string; refreshToken: 
 }
 
 // Root layout — inicializa auth y gestiona deep links del Magic Link
+// Flujo de navegación completo:
+//   1ª apertura → /(welcome)/onboarding → /(auth) → /(onboarding)/setup → /(app)
+//   Siguientes → /(app) directamente (o /(auth) si no hay sesión)
 export default function RootLayout() {
+  // null = verificando, true = ya visto, false = mostrar onboarding de bienvenida
+  const [welcomeChecked, setWelcomeChecked] = useState(false)
+  const [welcomeShown, setWelcomeShown] = useState(true)
+  const pathname = usePathname() ?? ''
+
   useEffect(() => {
+    // Verificar onboarding de bienvenida ANTES del check de sesión de Supabase
+    AsyncStorage.getItem('onboarding_shown')
+      .then((val) => {
+        setWelcomeShown(!!val)
+        setWelcomeChecked(true)
+      })
+      .catch(() => {
+        // En caso de error al leer storage, no bloquear el flujo normal
+        setWelcomeChecked(true)
+      })
+
+    // Inicializar la BD SQLite offline en background
+    getDb().catch((e) => logger.warn('SQLite no disponible', { error: e }))
+
+    // Cargar timezone guardado en AsyncStorage
+    useTimezoneStore.getState().loadFromStorage().catch(() => {})
+
     // Inicializa el listener de auth — retorna cleanup para desmontar
     const cleanupAuth = useAuthStore.getState().initialize()
 
@@ -69,12 +99,31 @@ export default function RootLayout() {
     }
   }, [])
 
+  // Sin flash: esperar a que AsyncStorage resuelva antes de renderizar nada
+  if (!welcomeChecked) return null
+
+  // Primera apertura — mostrar slides de bienvenida antes de ir a auth
+  if (!welcomeShown && !pathname.startsWith('/onboarding')) {
+    return (
+      <ErrorBoundary>
+        <GestureHandlerRootView style={{ flex: 1 }}>
+          <StatusBar style="light" />
+          <Redirect href="/onboarding" />
+        </GestureHandlerRootView>
+      </ErrorBoundary>
+    )
+  }
+
   return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
-      <QueryClientProvider client={queryClient}>
-        <StatusBar style="light" />
-        <Stack screenOptions={{ headerShown: false }} />
-      </QueryClientProvider>
-    </GestureHandlerRootView>
+    <ErrorBoundary>
+      <GestureHandlerRootView style={{ flex: 1 }}>
+        <QueryClientProvider client={queryClient}>
+          <StatusBar style="light" />
+          <Stack screenOptions={{ headerShown: false }} />
+          {/* Toast fuera del navegador para que sea verdaderamente global */}
+          <Toast />
+        </QueryClientProvider>
+      </GestureHandlerRootView>
+    </ErrorBoundary>
   )
 }

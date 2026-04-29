@@ -5,6 +5,7 @@ import { TripCard } from '@/components/TripCard'
 import { EmptyState } from '@/components/EmptyState'
 import { LoadingSkeleton } from '@/components/LoadingSkeleton'
 import { Header } from '@/components/Header'
+import { OfflineBanner } from '@/components/OfflineBanner'
 import type { Trip } from '@travelapp/types'
 
 // Tab Mis Viajes — lista principal de viajes del usuario
@@ -46,6 +47,7 @@ export default function HomeScreen() {
 
   return (
     <View className="flex-1 bg-slate-900">
+      <OfflineBanner />
       <Header title="Mis Viajes" actionLabel="+ Nuevo" onAction={handleNewTrip} />
 
       <FlatList

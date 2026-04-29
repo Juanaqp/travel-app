@@ -722,6 +722,28 @@ export default function ItineraryScreen() {
               </Text>
             </View>
           ) : null}
+          {/* Toggle Lista / Agenda / Mapa */}
+          <View className="flex-row gap-0.5 rounded-lg border border-slate-700 bg-slate-800 p-0.5">
+            <View className="rounded-md bg-slate-700 px-2.5 py-1">
+              <Text className="text-xs font-semibold text-white">Lista</Text>
+            </View>
+            <Pressable
+              onPress={() => router.push(`/(app)/trips/${tripId}/itinerary/calendar` as never)}
+              accessibilityRole="button"
+              accessibilityLabel="Ver vista agenda"
+              className="rounded-md px-2.5 py-1 active:bg-slate-700"
+            >
+              <Text className="text-xs font-semibold text-slate-400">Agenda</Text>
+            </Pressable>
+            <Pressable
+              onPress={() => router.push(`/(app)/trips/${tripId}/itinerary/map` as never)}
+              accessibilityRole="button"
+              accessibilityLabel="Ver mapa del itinerario"
+              className="rounded-md px-2.5 py-1 active:bg-slate-700"
+            >
+              <Text className="text-xs font-semibold text-slate-400">🗺️</Text>
+            </Pressable>
+          </View>
           <Pressable
             onPress={() => setIsEditMode((v) => !v)}
             accessibilityRole="button"

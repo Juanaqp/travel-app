@@ -1,4 +1,5 @@
 // Tipos del dominio de usuario — extiende el perfil de Supabase Auth
+import type { TravelPace, BudgetTier } from './trip'
 
 // Plan de suscripción — refleja el enum SQL user_plan
 export type UserPlan = 'free' | 'pro' | 'team'
@@ -9,6 +10,16 @@ export const AI_MESSAGE_LIMITS: Record<UserPlan, number> = {
   pro: 200,
   team: 500,
 }
+
+// Intereses de viaje — almacenados como text[] en la BD
+export type TravelInterest =
+  | 'culture'
+  | 'gastronomy'
+  | 'nature'
+  | 'adventure'
+  | 'beach'
+  | 'city'
+  | 'photography'
 
 // Perfil extendido del usuario — tabla public.users
 export interface UserProfile {
@@ -23,9 +34,18 @@ export interface UserProfile {
   aiMessagesLimit: number
   aiMessagesResetAt: string  // ISO datetime: primer día del mes siguiente
 
-  // Preferencias
+  // Preferencias básicas
   preferredCurrency: string  // ISO 4217: 'USD', 'EUR'
   preferredLanguage: string  // ISO 639-1: 'es', 'en'
+  timezone: string           // IANA timezone: 'America/Lima', 'Europe/Madrid'
+
+  // Preferencias de viaje — capturadas en el onboarding
+  travelInterests: TravelInterest[]
+  preferredPace?: TravelPace
+  preferredBudget?: BudgetTier
+
+  // Estado del onboarding
+  onboardingCompleted: boolean
 
   // Timestamps
   createdAt: string
@@ -38,4 +58,18 @@ export interface UpdateUserProfileInput {
   avatarUrl?: string
   preferredCurrency?: string
   preferredLanguage?: string
+  timezone?: string
+  travelInterests?: TravelInterest[]
+  preferredPace?: TravelPace
+  preferredBudget?: BudgetTier
+}
+
+// Datos recopilados durante el flujo de onboarding obligatorio
+export interface OnboardingData {
+  fullName: string              // mínimo 2 caracteres
+  timezone: string              // IANA timezone
+  preferredCurrency: string     // ISO 4217
+  preferredPace: TravelPace
+  travelInterests: TravelInterest[]  // mínimo 1
+  preferredBudget: BudgetTier
 }

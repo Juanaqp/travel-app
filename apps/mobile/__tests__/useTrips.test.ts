@@ -48,12 +48,32 @@ vi.mock('@/lib/logger', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }))
 
+vi.mock('@/lib/notifications', () => ({
+  cancelAllTripNotifications: vi.fn().mockResolvedValue(undefined),
+}))
+
+vi.mock('@/lib/offline/reader', () => ({
+  saveTripsOffline: vi.fn().mockResolvedValue(undefined),
+  getTripsOffline: vi.fn().mockResolvedValue([]),
+}))
+
+vi.mock('@/lib/offline/sync', () => ({
+  addPendingOperation: vi.fn().mockResolvedValue(undefined),
+}))
+
+vi.mock('@/stores/useToastStore', () => ({
+  useToastStore: { getState: vi.fn().mockReturnValue({ showToast: vi.fn() }) },
+}))
+
 vi.mock('react-native', () => ({
   Platform: { OS: 'ios' },
 }))
 
 // Importar las funciones puras DESPUÉS de los mocks
-import { fetchUserTrips, createTrip } from '../hooks/useTrips'
+import { fetchUserTrips, createTrip, archiveTrip } from '../hooks/useTrips'
+import { getTripsOffline } from '../lib/offline/reader'
+import { addPendingOperation } from '../lib/offline/sync'
+import { cancelAllTripNotifications } from '../lib/notifications'
 import type { CreateTripInput } from '@travelapp/types'
 
 // ─── Datos de prueba ─────────────────────────────────────────────────────────
@@ -233,5 +253,121 @@ describe('createTrip', () => {
     mockSingle.mockResolvedValue({ data: null, error: new Error('Insert fallido') })
 
     await expect(createTrip(VALID_INPUT)).rejects.toThrow('Insert fallido')
+  })
+})
+
+// ─── archiveTrip ──────────────────────────────────────────────────────────────
+
+describe('archiveTrip', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockGetUser.mockResolvedValue({ data: { user: MOCK_USER }, error: null })
+    // Soft delete vía update — resolución exitosa por defecto
+    mockUpdate.mockReturnValue({
+      eq: vi.fn().mockReturnValue({
+        eq: vi.fn().mockResolvedValue({ error: null }),
+      }),
+    })
+    mockFrom.mockReturnValue({ update: mockUpdate })
+  })
+
+  it('ejecuta soft delete: llama update con deleted_at en lugar de DELETE físico', async () => {
+    await archiveTrip('trip-abc')
+
+    expect(mockFrom).toHaveBeenCalledWith('trips')
+    expect(mockUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ deleted_at: expect.any(String) })
+    )
+    // Nunca debe haber llamada a .delete()
+    expect(mockFrom().delete).toBeUndefined()
+  })
+
+  it('cancela las notificaciones del viaje al archivar', async () => {
+    await archiveTrip('trip-abc')
+
+    expect(cancelAllTripNotifications).toHaveBeenCalledWith('trip-abc')
+  })
+
+  it('encola operación offline si Supabase falla', async () => {
+    mockUpdate.mockReturnValue({
+      eq: vi.fn().mockReturnValue({
+        eq: vi.fn().mockResolvedValue({ error: new Error('Sin conexión') }),
+      }),
+    })
+
+    await archiveTrip('trip-offline')
+
+    expect(addPendingOperation).toHaveBeenCalledWith(
+      'trips',
+      'delete',
+      'trip-offline',
+      expect.objectContaining({ deleted_at: expect.any(String) })
+    )
+  })
+
+  it('cancela notificaciones incluso cuando Supabase falla (no bloquea)', async () => {
+    mockUpdate.mockReturnValue({
+      eq: vi.fn().mockReturnValue({
+        eq: vi.fn().mockResolvedValue({ error: new Error('Sin conexión') }),
+      }),
+    })
+
+    await archiveTrip('trip-abc')
+
+    // La cancelación de notificaciones es independiente del resultado de red
+    expect(cancelAllTripNotifications).toHaveBeenCalledWith('trip-abc')
+  })
+})
+
+// ─── fetchUserTrips — fallback offline ───────────────────────────────────────
+
+describe('fetchUserTrips — fallback offline', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockGetUser.mockResolvedValue({ data: { user: MOCK_USER }, error: null })
+  })
+
+  it('retorna datos offline cuando Supabase falla y hay caché disponible', async () => {
+    // Supabase falla en la query
+    mockOrder.mockResolvedValue({ data: null, error: new Error('Error de red') })
+    mockIs.mockReturnValue({ order: mockOrder })
+    mockEq.mockReturnValue({ is: mockIs })
+    mockSelect.mockReturnValue({ eq: mockEq })
+    mockFrom.mockReturnValue({ select: mockSelect })
+
+    // Hay datos en el caché offline
+    const offlineTrip = { id: 'trip-offline', title: 'Viaje en caché' } as never
+    vi.mocked(getTripsOffline).mockResolvedValue([offlineTrip])
+
+    const trips = await fetchUserTrips()
+
+    expect(getTripsOffline).toHaveBeenCalledTimes(1)
+    expect(trips).toHaveLength(1)
+    expect(trips[0]).toMatchObject({ id: 'trip-offline' })
+  })
+
+  it('lanza el error de Supabase si no hay datos offline disponibles', async () => {
+    mockOrder.mockResolvedValue({ data: null, error: new Error('Error de red') })
+    mockIs.mockReturnValue({ order: mockOrder })
+    mockEq.mockReturnValue({ is: mockIs })
+    mockSelect.mockReturnValue({ eq: mockEq })
+    mockFrom.mockReturnValue({ select: mockSelect })
+
+    // Sin datos en caché offline
+    vi.mocked(getTripsOffline).mockResolvedValue([])
+
+    await expect(fetchUserTrips()).rejects.toThrow('Error de red')
+  })
+
+  it('guarda los viajes en caché offline después de una fetch exitosa', async () => {
+    setupQueryChain({ data: [MOCK_TRIP_ROW], error: null })
+
+    await fetchUserTrips()
+
+    // saveTripsOffline se llama en background con los viajes obtenidos
+    const { saveTripsOffline } = await import('../lib/offline/reader')
+    // Damos tiempo a la operación en background
+    await new Promise((r) => setTimeout(r, 10))
+    expect(saveTripsOffline).toHaveBeenCalledTimes(1)
   })
 })

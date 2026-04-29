@@ -197,25 +197,34 @@ export default function TripDetailScreen() {
       emoji: '📄',
       title: 'Documentos',
       subtitle: 'Pasaportes, visas y reservas',
-      onPress: () => {},
+      onPress: () => router.push(`/(app)/trips/${id}/documents` as never),
       accessibilityLabel: 'Módulo de documentos del viaje',
     },
     {
       emoji: '💰',
       title: 'Gastos',
       subtitle: 'Control de presupuesto',
-      onPress: () => {},
+      onPress: () => router.push(`/(app)/trips/${id}/expenses` as never),
       accessibilityLabel: 'Módulo de gastos del viaje',
     },
     {
       emoji: '🌍',
       title: 'Mapa',
-      subtitle:
-        trip.destinations.length > 0
-          ? `${trip.destinations.length} destino${trip.destinations.length > 1 ? 's' : ''}`
-          : 'Sin destinos configurados',
-      onPress: () => {},
+      subtitle: savedItinerary
+        ? `${Object.values(savedItinerary.graph.nodes).filter((n) => n.location.lat != null).length} lugares mapeados`
+        : 'Ver ubicaciones del itinerario',
+      onPress: () =>
+        savedItinerary
+          ? router.push(`/(app)/trips/${id}/itinerary/map` as never)
+          : router.push(`/(app)/trips/${id}/itinerary` as never),
       accessibilityLabel: 'Módulo de mapa del viaje',
+    },
+    {
+      emoji: '🔔',
+      title: 'Notificaciones',
+      subtitle: 'Recordatorios del viaje',
+      onPress: () => router.push(`/(app)/trips/${id}/notifications` as never),
+      accessibilityLabel: 'Módulo de notificaciones del viaje',
     },
   ]
 
@@ -230,16 +239,22 @@ export default function TripDetailScreen() {
             Módulos del viaje
           </Text>
 
-          {/* Fila 1 */}
+          {/* Fila 1: Itinerario + Documentos */}
           <View className="mb-3 flex-row gap-3">
             <ModuleCard {...modules[0]!} />
             <ModuleCard {...modules[1]!} />
           </View>
 
-          {/* Fila 2 */}
-          <View className="flex-row gap-3">
+          {/* Fila 2: Gastos + Mapa */}
+          <View className="mb-3 flex-row gap-3">
             <ModuleCard {...modules[2]!} />
             <ModuleCard {...modules[3]!} />
+          </View>
+
+          {/* Fila 3: Notificaciones */}
+          <View className="flex-row gap-3">
+            <ModuleCard {...modules[4]!} />
+            <View className="flex-1" />
           </View>
         </View>
       </ScrollView>

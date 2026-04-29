@@ -58,13 +58,14 @@ interface Viaje { ... }
 
 | Capa | Tecnología | Versión |
 |---|---|---|
-| Framework mobile/web | Expo SDK | 52 (~52.0.0) |
-| Router | Expo Router | v4 (~4.0.17) — SDK 52 requiere v4, no v3 |
-| React | React | 18.3.1 — 18.3.2 no existe en npm |
-| Lenguaje | TypeScript | 5 (modo estricto) |
-| Estilos | NativeWind | 4.1.23 — 4.2.x requiere react-native-worklets incompatible con RN 0.76 |
-| Estado global UI | Zustand | v5 |
-| Estado servidor / caché | TanStack Query (React Query) | v5 |
+| Framework mobile/web | Expo SDK | 54 (~54.0.33) |
+| Router | Expo Router | v6 (~6.0.23) — SDK 54 requiere v6, no v4 |
+| React | React | 19.1.0 |
+| React Native | React Native | 0.81.5 |
+| Lenguaje | TypeScript | ~5.5.0 (modo estricto) — mínimo 5.4 por `"module": "preserve"` en SDK 54 |
+| Estilos | NativeWind | 4.1.23 — compatible con RN 0.81.5 |
+| Estado global UI | Zustand | ^5.0.12 |
+| Estado servidor / caché | TanStack Query (React Query) | ^5.100.1 |
 | Backend | Supabase JS SDK | v2 |
 | Base de datos | PostgreSQL | 15 (via Supabase) |
 | Auth | Supabase Auth | — |
@@ -334,6 +335,54 @@ logger.debug('Respuesta de la Edge Function', { response })  // Solo en dev
 // ❌ Incorrecto
 console.log('Trip created')
 console.error('Error:', err)
+```
+
+### Edge Functions — convenciones de imports y logging
+
+```typescript
+// ✅ Correcto — usar npm: imports (Deno Deploy los resuelve en tiempo de ejecución)
+import { createClient } from 'npm:@supabase/supabase-js@2'
+import { z } from 'npm:zod@3'
+
+// ❌ Incorrecto — esm.sh introduce latencia extra y puede quedar desactualizado
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'  // NO
+
+// ❌ Incorrecto — imports relativos fuera de supabase/functions/ no funcionan en Deno Deploy
+import type { Trip } from '../../packages/types/trip.ts'  // NO — usar tipos inline o npm:
+```
+
+```typescript
+// ✅ En Edge Functions, console.log es aceptable para logging servidor
+console.log('Itinerary generated', { tripId, nodes: graph.nodes.length })
+console.error('OpenAI call failed', { error, attempt })
+
+// La regla "usar logger.ts" aplica SOLO al código del cliente (apps/mobile/)
+// Las Edge Functions corren en Deno, no tienen acceso a lib/logger.ts
+```
+
+### Types — tipos de base de datos
+
+```typescript
+// packages/types/database.ts es GENERADO — no escribir tipos de BD a mano
+// Regenerar siempre que cambien las migraciones:
+//   supabase gen types typescript --local > packages/types/database.ts
+
+// ✅ Correcto — usar los tipos generados
+import type { Database } from '@/../../packages/types/database'
+type TripRow = Database['public']['Tables']['trips']['Row']
+type TripInsert = Database['public']['Tables']['trips']['Insert']
+
+// También disponibles los helpers genéricos:
+import type { Tables, TablesInsert, Enums } from '@/../../packages/types/database'
+type Trip = Tables<'trips'>
+type TripStatus = Enums<'trip_status'>
+
+// ❌ Incorrecto — nunca escribir tipos de fila de BD manualmente
+interface TripRow {  // NO — ya existe en database.ts y se desincronizará
+  id: string
+  user_id: string
+  title: string
+}
 ```
 
 ### Estilos — NativeWind siempre, StyleSheet solo si es inevitable
@@ -713,7 +762,7 @@ FLIGHTAWARE_API_KEY=xxxxx             # Estado de vuelos
 PROHIBIDO:  Tipos TypeScript inline — siempre usar packages/types/
 PROHIBIDO:  fetch() directo — siempre el cliente Supabase o SDK del LLM
 PROHIBIDO:  useEffect para data fetching — usar React Query
-PROHIBIDO:  console.log, console.error — usar logger.ts
+PROHIBIDO:  console.log, console.error en código del cliente (apps/mobile/) — usar logger.ts (en Edge Functions sí es aceptable)
 PROHIBIDO:  Editar schema de BD en el dashboard — solo via migraciones SQL
 PROHIBIDO:  Secretos en variables EXPO_PUBLIC_ o en código fuente
 PROHIBIDO:  Guardar itinerario en BD mientras status !== 'approved'
@@ -736,7 +785,7 @@ Antes de decir "listo" en cualquier tarea, verificar:
 ```
 [ ] pnpm typecheck pasa con 0 errores
 [ ] pnpm test:run pasa con 0 failures
-[ ] No hay console.log ni console.error en el código nuevo
+[ ] No hay console.log ni console.error en código del cliente (apps/mobile/) — en Edge Functions sí es aceptable
 [ ] Todos los tipos vienen de packages/types/ (ninguno inline)
 [ ] Todos los errores tienen logger.error con contexto
 [ ] Los estados de loading y error están manejados en la UI
@@ -802,5 +851,5 @@ Al iniciar cada sesión con Claude Code:
 
 ---
 
-*Última actualización: 2026-04-22 — Fase 2 iniciada (schema + tipos)*
+*Última actualización: 2026-04-29 — versiones actualizadas a stack real instalado (Expo 54, React 19, Router v6, RN 0.81.5, TS 5.5); añadidas convenciones de Edge Functions y tipos de BD*
 *Versión del schema de itinerario: 2.1.0*

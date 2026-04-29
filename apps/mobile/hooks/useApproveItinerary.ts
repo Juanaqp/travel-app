@@ -2,7 +2,14 @@ import { useMutation } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { logger } from '@/lib/logger'
 import { useItineraryStore } from '@/stores/useItineraryStore'
-import type { ItineraryGraph, NodeUserStatus } from '@travelapp/types'
+import {
+  scheduleCheckinReminder,
+  scheduleAirportReminder,
+  scheduleDailySummary,
+  requestPermissions,
+} from '@/lib/notifications'
+import { saveItineraryOffline } from '@/lib/offline/reader'
+import type { ItineraryGraph, NodeUserStatus, FlightNode } from '@travelapp/types'
 
 export interface ApproveItineraryParams {
   tripId: string
@@ -98,6 +105,33 @@ export const approveItinerary = async (
     tripId: params.tripId,
     totalNodes: params.draftGraph.meta.totalNodes,
   })
+
+  // Guardar en caché offline
+  saveItineraryOffline(itineraryId, params.tripId, params.draftGraph).catch(() => {})
+
+  // Programar notificaciones si el usuario tiene permisos
+  const hasPermission = await requestPermissions()
+  if (hasPermission) {
+    const destinationTz = params.draftGraph.destinationTimezone ?? 'UTC'
+
+    // Notificaciones de vuelo
+    const flightNodes = Object.values(params.draftGraph.nodes).filter(
+      (n): n is FlightNode => n.type === 'flight' && n.userStatus !== 'rejected'
+    )
+    for (const flight of flightNodes) {
+      const departureIso = flight.isoTime ?? flight.departureTime
+      if (!departureIso) continue
+      const originTz = flight.timezone ?? destinationTz
+      await scheduleCheckinReminder(params.tripId, flight.name, departureIso, originTz)
+      await scheduleAirportReminder(params.tripId, flight.name, departureIso, originTz)
+    }
+
+    // Resumen diario para cada día
+    for (const day of params.draftGraph.days) {
+      const title = day.title ?? `Día ${day.dayNumber}`
+      await scheduleDailySummary(params.tripId, title, day.date, destinationTz)
+    }
+  }
 
   return { itineraryId }
 }

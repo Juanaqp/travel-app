@@ -7,7 +7,7 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native'
-import { router } from 'expo-router'
+import { router, useLocalSearchParams } from 'expo-router'
 import { useCreateTrip } from '@/hooks/useTrips'
 import { Input } from '@/components/Input'
 import { Button } from '@/components/Button'
@@ -256,8 +256,13 @@ const Step3Style = ({ form, onChange }: Step3Props) => (
 const DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/
 
 export default function NewTripScreen() {
+  const { destination } = useLocalSearchParams<{ destination?: string }>()
   const [step, setStep] = useState(0)
-  const [form, setForm] = useState<WizardFormData>(INITIAL_FORM)
+  // Pre-rellena la ciudad con el destino pasado desde la pantalla Explorar
+  const [form, setForm] = useState<WizardFormData>({
+    ...INITIAL_FORM,
+    city: destination ?? '',
+  })
   const [errors, setErrors] = useState<Partial<Record<keyof WizardFormData, string>>>({})
 
   const { mutateAsync: createTrip, isPending } = useCreateTrip()

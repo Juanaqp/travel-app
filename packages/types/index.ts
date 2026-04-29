@@ -6,6 +6,7 @@ export * from './user'
 export * from './expense'
 export * from './document'
 export * from './itinerary'
+export * from './explore'
 
 // Schemas Zod — para validación en Edge Functions y formularios
 export * from './schemas/trip.schema'

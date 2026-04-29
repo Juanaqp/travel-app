@@ -60,3 +60,50 @@ export interface CreateExpenseInput {
   notes?: string
   receiptStoragePath?: string
 }
+
+// Input de actualización — todos los campos opcionales excepto id
+export interface UpdateExpenseInput {
+  id: string
+  description?: string
+  amount?: number
+  currency?: string
+  amountInBaseCurrency?: number
+  category?: ExpenseCategory
+  spentAt?: string
+  location?: string
+  notes?: string
+}
+
+// Totales agrupados para la pantalla de gastos
+export interface ExpenseTotals {
+  total: number                              // total en moneda base
+  byCategory: Record<ExpenseCategory, number>
+  count: number
+}
+
+// Campos estructurados que devuelve la Edge Function
+export interface ParsedExpenseFields {
+  amount: number | null
+  currency: string | null
+  category: ExpenseCategory | null
+  title: string | null
+  date: string | null
+}
+
+// Resultado completo de parse-expense — consistente con ParseDocumentResult
+export interface ParseExpenseResult {
+  type: 'expense'
+  confidence: number
+  raw_text: string
+  fields: ParsedExpenseFields
+  cached: boolean
+  tripId?: string
+}
+
+// Input para la Edge Function parse-expense
+export interface ParseExpenseInput {
+  text: string
+  tripId?: string
+  language?: 'es' | 'en'
+  currentDate?: string          // YYYY-MM-DD — para calcular fechas relativas
+}

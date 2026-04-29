@@ -1,0 +1,59 @@
+appId: com.travelapp.mobile
+name: Crear viaje con asistente paso a paso
+tags:
+  - trips
+  - smoke
+
+---
+# Flujo completo del wizard de creación de viaje (3 pasos)
+
+- launchApp
+
+# ─── Desde el dashboard, abrir el asistente ──────────────────────────────────
+- tapOn:
+    text: "Crear viaje"
+- waitForAnimationToEnd
+
+# ─── Paso 1: Nombre y destino ─────────────────────────────────────────────────
+- assertVisible: "¿A dónde vas?"
+- tapOn:
+    id: "input-trip-title"
+- inputText: "Tokio 2026"
+- tapOn:
+    id: "input-destination-city"
+- inputText: "Tokio"
+- tapOn:
+    text: "Japón"    # selección en sugerencias
+- tapOn:
+    text: "Siguiente"
+- waitForAnimationToEnd
+
+# ─── Paso 2: Fechas y viajeros ────────────────────────────────────────────────
+- assertVisible: "¿Cuándo viajas?"
+- tapOn:
+    id: "input-start-date"
+- inputText: "01/06/2026"
+- tapOn:
+    id: "input-end-date"
+- inputText: "15/06/2026"
+- tapOn:
+    id: "input-travelers-count"
+- clearText
+- inputText: "2"
+- tapOn:
+    text: "Siguiente"
+- waitForAnimationToEnd
+
+# ─── Paso 3: Presupuesto y ritmo ─────────────────────────────────────────────
+- assertVisible: "Estilo de viaje"
+- tapOn:
+    text: "Moderado"     # pace
+- tapOn:
+    text: "Medio"        # budget tier
+- tapOn:
+    text: "Crear viaje"
+- waitForAnimationToEnd
+
+# ─── Viaje creado — aparece en la lista ───────────────────────────────────────
+- assertVisible: "Tokio 2026"
+- assertVisible: "Planificando"

@@ -40,9 +40,12 @@ export interface BaseNode {
   type: NodeType
   dayId: string
   order: number           // posición dentro del día
-  time: string            // 'HH:mm' en hora local del destino
+  time: string            // 'HH:mm' en hora local del destino (para UI y edición)
   durationMinutes: number
   endTime: string         // calculado: time + durationMinutes
+  // Campos de timezone — opcionales para compatibilidad con nodos existentes
+  isoTime?: string        // ISO 8601 con offset: "2025-09-14T22:30:00-05:00"
+  timezone?: string       // IANA timezone del nodo: "America/Lima"
   name: string
   description: string
   emoji: string
@@ -173,4 +176,58 @@ export interface ItineraryGraph {
   nodes: Record<string, ItineraryNode>  // mapa nodeId → nodo
   edges: ItineraryEdge[]
   meta: ItineraryMeta
+  // IANA timezone del destino principal (ej: "Europe/Rome")
+  destinationTimezone?: string
+}
+
+// ─── Helpers de timezone — usan Intl nativo, sin librerías externas ──────────
+
+// Convierte una fecha ISO 8601 a 'HH:mm' en el timezone destino
+export const convertToTimezone = (isoString: string, targetTz: string): string => {
+  try {
+    return new Intl.DateTimeFormat('es', {
+      timeZone: targetTz,
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    }).format(new Date(isoString))
+  } catch {
+    return isoString.slice(11, 16)  // fallback: extraer HH:mm del ISO string
+  }
+}
+
+// Calcula el desfase de días entre la hora de origen y la hora en targetTz
+// Devuelve 0, +1 o +2 (para mostrar badge "+1 día" en vuelos nocturnos)
+export const getDayOffset = (isoString: string, originTz: string, targetTz: string): number => {
+  try {
+    const fmt = (tz: string) => new Intl.DateTimeFormat('es', {
+      timeZone: tz, day: 'numeric', month: 'numeric', year: 'numeric',
+    }).format(new Date(isoString))
+    const originDate = fmt(originTz)
+    const targetDate = fmt(targetTz)
+    if (originDate === targetDate) return 0
+    // Calcular diferencia en días comparando timestamps
+    const toMs = (tz: string) => {
+      const parts = new Intl.DateTimeFormat('en-US', {
+        timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit',
+      }).formatToParts(new Date(isoString))
+      const m = Object.fromEntries(parts.map(p => [p.type, p.value]))
+      return Date.UTC(Number(m.year), Number(m.month) - 1, Number(m.day))
+    }
+    const diff = Math.round((toMs(targetTz) - toMs(originTz)) / 86_400_000)
+    return diff
+  } catch {
+    return 0
+  }
+}
+
+// Formatea la hora de un nodo para mostrar al usuario en el timezone activo.
+// Si el nodo tiene isoTime usa conversión precisa; si no, usa el campo time (HH:mm).
+export const formatNodeTime = (node: BaseNode, displayTimezone?: string): string => {
+  if (node.isoTime) {
+    const tz = displayTimezone ?? node.timezone
+    if (tz) return convertToTimezone(node.isoTime, tz)
+    return node.isoTime.slice(11, 16)  // extraer HH:mm del ISO
+  }
+  return node.time
 }

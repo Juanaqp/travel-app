@@ -5,6 +5,8 @@
 
 import { createClient } from 'npm:@supabase/supabase-js@2'
 import { z } from 'npm:zod'
+import { errorResponse } from '../_shared/errors.ts'
+import { checkAndIncrementUsage, RateLimitExceededError } from '../_shared/rateLimiter.ts'
 
 // ─── Constantes ───────────────────────────────────────────────────────────────
 
@@ -333,7 +335,12 @@ interface BaseNode {
   description: string
   emoji: string
   aiTip: string         // consejo práctico en ${tipLang}
-  location: { address?: string; lat?: number; lng?: number }
+  location: {
+    address?: string
+    lat?: number        // latitud WGS84 — incluir siempre que conozcas la ubicación exacta
+    lng?: number        // longitud WGS84 — incluir siempre que conozcas la ubicación exacta
+    placeId?: string    // Google Places ID si lo conoces
+  }
   cost: { amount?: number; currency?: string; isIncluded?: boolean }
   userStatus: "pending"
   isAiGenerated: true
@@ -365,6 +372,7 @@ interface ItineraryMeta {
 TIPOS CRÍTICOS — respetar exactamente:
 1. fromLocation y toLocation → STRING, NUNCA objeto. Correcto: "Shibuya Station". Incorrecto: {"name":"Shibuya"}
 2. priceRange → NÚMERO entero (1, 2, 3 o 4), NUNCA string como "$" o "$$"
+3. location.lat y location.lng → NÚMEROS decimales WGS84. INCLUIR para TODOS los nodos con ubicación física conocida (poi, restaurant, hotel_checkin, activity). Ejemplo correcto: "lat": 41.9029, "lng": 12.4534
 3. createdAt → OBLIGATORIO en cada nodo, formato ISO: "2026-04-25T00:00:00.000Z"
 4. time / endTime → "HH:mm" exacto — "09:00", "10:30"
 5. nodes → Record<string, Node> (objeto), NUNCA array
@@ -429,6 +437,7 @@ const buildUserPrompt = (userRequest: string, context: RequestContext): string =
   prompt +=
     `\nUSA exactamente tripId="${context.tripId}" en el JSON.` +
     `\nRecuerda: fromLocation y toLocation son STRINGS, createdAt es OBLIGATORIO en cada nodo.` +
+    `\nIncluye lat/lng reales (WGS84) en location para TODOS los nodos con ubicación física conocida.` +
     `\n\nRESPONDE ÚNICAMENTE CON EL OBJETO JSON. Sin explicaciones, sin markdown.`
 
   return prompt
@@ -478,12 +487,6 @@ const saveToCache = async (
   await supabase
     .from('itinerary_cache')
     .upsert({ cache_key: cacheKey, graph, created_at: new Date().toISOString() })
-}
-
-// ─── Registro de uso de IA ────────────────────────────────────────────────────
-
-const incrementAiUsage = async (supabase: SupabaseClient, userId: string): Promise<void> => {
-  await supabase.rpc('increment_ai_msgs', { user_id_param: userId })
 }
 
 // ─── Tipos de la respuesta de OpenAI ─────────────────────────────────────────
@@ -685,7 +688,7 @@ Deno.serve(async (req: Request) => {
   }
 
   if (req.method !== 'POST') {
-    return jsonResponse({ error: 'Método no permitido' }, 405)
+    return errorResponse('METHOD_NOT_ALLOWED', 'Método no permitido', 405)
   }
 
   const timeoutController = new AbortController()
@@ -699,21 +702,18 @@ Deno.serve(async (req: Request) => {
     try {
       body = await req.json()
     } catch {
-      return jsonResponse({ error: 'Body JSON inválido' }, 400)
+      return errorResponse('INVALID_BODY', 'Body JSON inválido', 400)
     }
 
     parseResult = requestSchema.safeParse(body)
     if (!parseResult.success) {
-      return jsonResponse(
-        { error: 'Datos de entrada inválidos', details: parseResult.error.flatten() },
-        422
-      )
+      return errorResponse('INVALID_INPUT', 'Datos de entrada inválidos', 422)
     }
     const { userRequest, context } = parseResult.data
 
     // 2. Verificar autenticación
     const authHeader = req.headers.get('Authorization')
-    if (!authHeader) return jsonResponse({ error: 'No autorizado' }, 401)
+    if (!authHeader) return errorResponse('UNAUTHORIZED', 'No autorizado', 401)
 
     const supabase = createClient(
       Deno.env.get('SUPABASE_URL')!,
@@ -725,7 +725,7 @@ Deno.serve(async (req: Request) => {
       data: { user },
       error: authError,
     } = await supabase.auth.getUser()
-    if (authError || !user) return jsonResponse({ error: 'No autorizado' }, 401)
+    if (authError || !user) return errorResponse('UNAUTHORIZED', 'No autorizado', 401)
 
     // 3. Buscar en caché
     console.log(`[generate-itinerary] Verificando caché para tripId: ${context.tripId}`)
@@ -738,11 +738,22 @@ Deno.serve(async (req: Request) => {
     }
     console.log(`[generate-itinerary] No encontrado en caché, llamando a OpenAI`)
 
-    // 4. Verificar API key
+    // 4. Verificar límite de uso de IA antes de llamar a OpenAI
+    try {
+      await checkAndIncrementUsage(user.id, supabase)
+    } catch (rateLimitErr) {
+      clearTimeout(timeoutId)
+      if (rateLimitErr instanceof RateLimitExceededError) {
+        return errorResponse('RATE_LIMIT_EXCEEDED', rateLimitErr.message, 429)
+      }
+      throw rateLimitErr
+    }
+
+    // 5. Verificar API key
     const openaiApiKey = Deno.env.get('OPENAI_API_KEY')
     if (!openaiApiKey) {
       clearTimeout(timeoutId)
-      return jsonResponse({ error: 'OPENAI_API_KEY no configurada' }, 500)
+      return errorResponse('MISSING_CONFIG', 'OPENAI_API_KEY no configurada', 500)
     }
 
     // 5. Llamar a OpenAI con normalización + validación + reintento
@@ -765,9 +776,6 @@ Deno.serve(async (req: Request) => {
     // 6. Guardar en caché
     await saveToCache(supabase, cacheKey, graph)
 
-    // 7. Incrementar contador de uso del usuario
-    await incrementAiUsage(supabase, user.id)
-
     clearTimeout(timeoutId)
     return jsonResponse(graph, 200)
   } catch (error) {
@@ -777,33 +785,27 @@ Deno.serve(async (req: Request) => {
       console.error(
         `[generate-itinerary] Timeout alcanzado para tripId: ${parseResult?.data?.context?.tripId || 'unknown'}`
       )
-      return jsonResponse({ error: 'Timeout: el servicio de IA tardó demasiado' }, 503)
+      return errorResponse('AI_UNAVAILABLE', 'Timeout: el servicio de IA tardó demasiado', 503)
     }
     if (error instanceof OpenAIApiError) {
       console.error(
         `[generate-itinerary] Error de API OpenAI para tripId: ${parseResult?.data?.context?.tripId || 'unknown'}`,
         (error as OpenAIApiError).message
       )
-      return jsonResponse({ error: (error as OpenAIApiError).message }, 503)
+      return errorResponse('AI_UNAVAILABLE', (error as OpenAIApiError).message, 503)
     }
     if (error instanceof ZodValidationError) {
       console.error(
         `[generate-itinerary] Error de validación Zod para tripId: ${parseResult?.data?.context?.tripId || 'unknown'}`,
         error.issues
       )
-      return jsonResponse(
-        {
-          error: 'El itinerario generado no cumple el schema tras los reintentos',
-          issues: error.issues.slice(0, 10),
-        },
-        422
-      )
+      return errorResponse('AI_UNAVAILABLE', 'El itinerario generado no cumple el schema tras los reintentos', 422)
     }
 
     console.error(
       `[generate-itinerary] Error inesperado para tripId: ${parseResult?.data?.context?.tripId || 'unknown'}`,
       error
     )
-    return jsonResponse({ error: 'Error interno del servidor' }, 500)
+    return errorResponse('INTERNAL_ERROR', 'Error interno del servidor', 500)
   }
 })

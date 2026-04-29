@@ -1,0 +1,33 @@
+appId: com.travelapp.mobile
+name: Registro y primer login con Magic Link
+tags:
+  - auth
+  - smoke
+
+---
+# Flujo de onboarding: pantalla de bienvenida → email → esperar Magic Link → dashboard
+
+- launchApp:
+    clearState: true
+
+# ─── Pantalla de bienvenida ──────────────────────────────────────────────────
+- assertVisible: "Bienvenido"
+- assertVisible: "Inicia sesión"
+
+# ─── Ingresar email ───────────────────────────────────────────────────────────
+- tapOn:
+    id: "input-email"
+- inputText: "test@travelapp.dev"
+- tapOn:
+    text: "Continuar"
+
+# ─── Pantalla de confirmación — link enviado ─────────────────────────────────
+- assertVisible: "Revisa tu email"
+- assertVisible: "test@travelapp.dev"
+
+# ─── Simula deep-link de Magic Link (Maestro intercept) ──────────────────────
+- openLink: "travelapp://auth/callback?access_token=mock_access_token&refresh_token=mock_refresh_token"
+
+# ─── Dashboard de Mis Viajes ─────────────────────────────────────────────────
+- waitForAnimationToEnd
+- assertVisible: "Mis Viajes"

@@ -2,6 +2,7 @@ import { useState, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { logger } from '@/lib/logger'
 import { useItineraryStore } from '@/stores/useItineraryStore'
+import { useToastStore } from '@/stores/useToastStore'
 import type { ItineraryGraph, TravelPace, BudgetTier } from '@travelapp/types'
 
 export type GenerationStatus = 'idle' | 'loading' | 'success' | 'error'
@@ -47,6 +48,7 @@ export const useGenerateItinerary = (): UseGenerateItineraryResult => {
   const [status, setStatus] = useState<GenerationStatus>('idle')
   const [error, setError] = useState<string | null>(null)
   const setDraftGraph = useItineraryStore((s) => s.setDraftGraph)
+  const { showToast } = useToastStore()
 
   const generate = useCallback(
     async (params: GenerateItineraryParams) => {
@@ -73,12 +75,17 @@ export const useGenerateItinerary = (): UseGenerateItineraryResult => {
         if (fnError) {
           // En Supabase JS v2, data siempre es null para respuestas no-2xx.
           // El body del error HTTP está en fnError.context (el objeto Response).
+          // Soporta el formato nuevo { error: { code, message } } y el legado { error: string }
           let backendMessage = fnError.message
           try {
-            const httpError = fnError as unknown as { context?: { json?: () => Promise<{ error?: string }> } }
+            const httpError = fnError as unknown as { context?: { json?: () => Promise<{ error?: { message?: string } | string }> } }
             if (typeof httpError.context?.json === 'function') {
               const body = await httpError.context.json()
-              if (body?.error) backendMessage = body.error
+              if (body?.error) {
+                backendMessage = typeof body.error === 'object'
+                  ? (body.error.message ?? fnError.message)
+                  : body.error
+              }
             }
           } catch {
             // body no es JSON o ya fue consumido — usar mensaje del SDK
@@ -87,7 +94,9 @@ export const useGenerateItinerary = (): UseGenerateItineraryResult => {
             error: fnError.message,
             backendMessage,
           })
-          setError(mapBackendError(backendMessage))
+          const friendlyMsg = mapBackendError(backendMessage)
+          setError(friendlyMsg)
+          showToast(friendlyMsg, 'error')
           setStatus('error')
           return
         }
@@ -101,7 +110,9 @@ export const useGenerateItinerary = (): UseGenerateItineraryResult => {
           !('nodes' in data)
         ) {
           logger.error('Respuesta inesperada de generate-itinerary — estructura inválida', { data })
-          setError('La respuesta del servidor no tiene el formato esperado.')
+          const msg = 'La respuesta del servidor no tiene el formato esperado.'
+          setError(msg)
+          showToast(msg, 'error')
           setStatus('error')
           return
         }
@@ -117,11 +128,13 @@ export const useGenerateItinerary = (): UseGenerateItineraryResult => {
         setStatus('success')
       } catch (err) {
         logger.error('Error inesperado en useGenerateItinerary', { err })
-        setError('Ocurrió un error inesperado. Por favor, inténtalo de nuevo.')
+        const msg = 'Ocurrió un error inesperado. Por favor, inténtalo de nuevo.'
+        setError(msg)
+        showToast(msg, 'error')
         setStatus('error')
       }
     },
-    [setDraftGraph]
+    [setDraftGraph, showToast]
   )
 
   const reset = useCallback(() => {

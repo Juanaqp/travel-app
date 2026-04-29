@@ -1,6 +1,10 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { logger } from '@/lib/logger'
+import { useToastStore } from '@/stores/useToastStore'
+import { saveTripsOffline, getTripsOffline } from '@/lib/offline/reader'
+import { addPendingOperation } from '@/lib/offline/sync'
+import { cancelAllTripNotifications } from '@/lib/notifications'
 import type {
   Trip,
   CreateTripInput,
@@ -10,6 +14,46 @@ import type {
   BudgetTier,
   Destination,
 } from '@travelapp/types'
+
+// Convierte base64 a Uint8Array para upload a Supabase Storage
+const base64ToUint8Array = (base64: string): Uint8Array => {
+  const binaryString = atob(base64)
+  const bytes = new Uint8Array(binaryString.length)
+  for (let i = 0; i < binaryString.length; i++) {
+    bytes[i] = binaryString.charCodeAt(i)
+  }
+  return bytes
+}
+
+// Sube imagen de portada al bucket trip-covers y retorna la URL pública
+const uploadTripCover = async (
+  tripId: string,
+  userId: string,
+  imageBase64: string,
+  mimeType: string
+): Promise<string> => {
+  const ext = mimeType === 'image/png' ? 'png' : mimeType === 'image/webp' ? 'webp' : 'jpg'
+  const storagePath = `${userId}/${tripId}/cover.${ext}`
+  const fileBytes = base64ToUint8Array(imageBase64)
+
+  const { error } = await supabase.storage
+    .from('trip-covers')
+    .upload(storagePath, fileBytes, {
+      contentType: mimeType,
+      upsert: true,  // permite reemplazar la portada existente
+    })
+
+  if (error) {
+    logger.error('Error al subir imagen de portada del viaje', { error, tripId })
+    throw error
+  }
+
+  const { data } = supabase.storage
+    .from('trip-covers')
+    .getPublicUrl(storagePath)
+
+  return data.publicUrl
+}
 
 // Tipo del registro de BD — se reemplaza por Database['public']['Tables']['trips']['Row']
 // cuando se genere packages/types/database.ts con `supabase gen types typescript --local`
@@ -67,6 +111,7 @@ const TRIPS_QUERY_KEY = 'trips' as const
 // ─── Funciones puras de BD — testeables independientemente del hook ──────────
 
 // Obtiene todos los viajes activos del usuario (excluye soft deleted)
+// Guarda el resultado en caché offline para uso sin conexión
 export const fetchUserTrips = async (): Promise<Trip[]> => {
   const user = await getAuthenticatedUser()
 
@@ -79,10 +124,19 @@ export const fetchUserTrips = async (): Promise<Trip[]> => {
 
   if (error) {
     logger.error('Error al obtener lista de viajes', { error, userId: user.id })
+    // Intentar retornar datos offline si falla la red
+    const offlineData = await getTripsOffline()
+    if (offlineData.length > 0) {
+      logger.info('Retornando viajes desde caché offline', { count: offlineData.length })
+      return offlineData
+    }
     throw error
   }
 
-  return (data as TripRow[]).map(mapRowToTrip)
+  const trips = (data as TripRow[]).map(mapRowToTrip)
+  // Actualizar caché offline en background
+  saveTripsOffline(trips).catch(() => {})
+  return trips
 }
 
 // Obtiene un viaje específico por ID
@@ -106,6 +160,7 @@ export const fetchTripById = async (id: string): Promise<Trip> => {
 }
 
 // Inserta un nuevo viaje y retorna el registro creado
+// Si se proporciona coverImageBase64, sube la portada al bucket trip-covers
 export const createTrip = async (input: CreateTripInput): Promise<Trip> => {
   const user = await getAuthenticatedUser()
 
@@ -132,7 +187,27 @@ export const createTrip = async (input: CreateTripInput): Promise<Trip> => {
     throw error
   }
 
-  return mapRowToTrip(data as TripRow)
+  const trip = mapRowToTrip(data as TripRow)
+
+  // Subir imagen de portada si se proporcionó — no bloquea si falla
+  if (input.coverImageBase64 && input.coverImageMimeType) {
+    try {
+      const coverUrl = await uploadTripCover(trip.id, user.id, input.coverImageBase64, input.coverImageMimeType)
+      const { data: updatedData, error: updateError } = await supabase
+        .from('trips')
+        .update({ cover_image_url: coverUrl })
+        .eq('id', trip.id)
+        .select()
+        .single()
+      if (!updateError && updatedData) {
+        return mapRowToTrip(updatedData as TripRow)
+      }
+    } catch (coverError) {
+      logger.warn('Portada no pudo subirse, viaje creado sin imagen de portada', { error: coverError, tripId: trip.id })
+    }
+  }
+
+  return trip
 }
 
 // Actualiza campos específicos de un viaje
@@ -167,7 +242,27 @@ export const updateTrip = async (input: UpdateTripInput): Promise<Trip> => {
     throw error
   }
 
-  return mapRowToTrip(data as TripRow)
+  const trip = mapRowToTrip(data as TripRow)
+
+  // Subir nueva imagen de portada si se proporcionó — no bloquea si falla
+  if (input.coverImageBase64 && input.coverImageMimeType) {
+    try {
+      const coverUrl = await uploadTripCover(trip.id, user.id, input.coverImageBase64, input.coverImageMimeType)
+      const { data: updatedData, error: updateError } = await supabase
+        .from('trips')
+        .update({ cover_image_url: coverUrl })
+        .eq('id', trip.id)
+        .select()
+        .single()
+      if (!updateError && updatedData) {
+        return mapRowToTrip(updatedData as TripRow)
+      }
+    } catch (coverError) {
+      logger.warn('Portada no pudo subirse, viaje actualizado sin imagen de portada', { error: coverError, tripId: trip.id })
+    }
+  }
+
+  return trip
 }
 
 // Archiva un viaje vía soft delete — nunca borrado físico
@@ -182,9 +277,13 @@ export const archiveTrip = async (tripId: string): Promise<void> => {
     .eq('user_id', user.id)
 
   if (error) {
-    logger.error('Error al archivar viaje', { error, tripId })
-    throw error
+    // Encolar para sincronizar cuando vuelva la conexión
+    await addPendingOperation('trips', 'delete', tripId, { deleted_at: now, updated_at: now })
+    logger.warn('Archivar viaje encolado offline', { tripId })
   }
+
+  // Cancelar notificaciones del viaje independientemente del resultado de red
+  cancelAllTripNotifications(tripId).catch(() => {})
 }
 
 // ─── React Query hooks ────────────────────────────────────────────────────────
@@ -195,6 +294,7 @@ export const useTrips = () =>
     queryFn: fetchUserTrips,
     staleTime: 5 * 60 * 1000,
     retry: 2,
+    throwOnError: false,
   })
 
 export const useTrip = (id: string) =>
@@ -216,6 +316,7 @@ export const useCreateTrip = () => {
     },
     onError: (error) => {
       logger.error('Mutation de crear viaje falló', { error })
+      useToastStore.getState().showToast('No se pudo crear el viaje. Inténtalo de nuevo.', 'error')
     },
   })
 }
@@ -231,6 +332,7 @@ export const useUpdateTrip = () => {
     },
     onError: (error) => {
       logger.error('Mutation de actualizar viaje falló', { error })
+      useToastStore.getState().showToast('No se pudo actualizar el viaje.', 'error')
     },
   })
 }
@@ -246,6 +348,7 @@ export const useArchiveTrip = () => {
     },
     onError: (error) => {
       logger.error('Mutation de archivar viaje falló', { error })
+      useToastStore.getState().showToast('No se pudo eliminar el viaje.', 'error')
     },
   })
 }

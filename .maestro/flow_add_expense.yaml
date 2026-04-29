@@ -1,0 +1,53 @@
+appId: com.travelapp.mobile
+name: Añadir gasto con parseo AI y conversión de moneda
+tags:
+  - expenses
+  - ai
+
+---
+# Flujo: abrir viaje → añadir gasto manual → verificar total actualizado
+
+- launchApp
+
+# ─── Navegar a la sección de gastos del viaje ────────────────────────────────
+- tapOn:
+    text: "Tokio 2026"
+- waitForAnimationToEnd
+- tapOn:
+    text: "Gastos"
+- waitForAnimationToEnd
+- assertVisible: "Gastos del viaje"
+
+# ─── Abrir formulario de nuevo gasto ─────────────────────────────────────────
+- tapOn:
+    id: "btn-add-expense"
+- waitForAnimationToEnd
+- assertVisible: "Nuevo gasto"
+
+# ─── Rellenar campos del formulario ─────────────────────────────────────────
+- tapOn:
+    id: "input-expense-title"
+- inputText: "Cena en Ichiran Ramen"
+- tapOn:
+    id: "input-expense-amount"
+- inputText: "2800"
+- tapOn:
+    id: "select-expense-currency"
+- tapOn:
+    text: "JPY"
+- tapOn:
+    id: "select-expense-category"
+- tapOn:
+    text: "Comida"
+
+# ─── Guardar el gasto ────────────────────────────────────────────────────────
+- tapOn:
+    text: "Guardar"
+- waitForAnimationToEnd
+
+# ─── Verificar que el gasto aparece en la lista ──────────────────────────────
+- assertVisible: "Ichiran Ramen"
+- assertVisible: "2.800"     # formato de número con separador de miles
+
+# ─── Total actualizado ────────────────────────────────────────────────────────
+- assertVisible: "Total"

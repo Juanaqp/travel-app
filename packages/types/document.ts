@@ -54,13 +54,43 @@ export interface VisaExtractedData {
   entries?: 'single' | 'multiple'
 }
 
+// Datos extraídos por la Edge Function parse-document — estructura normalizada
+export interface DocumentExtractedData {
+  type: string
+  confidence: number
+  raw_text: string
+  fields: Record<string, string | number | null>
+}
+
 // Unión de todos los tipos de metadatos posibles
 export type ExtractedData =
+  | DocumentExtractedData
   | FlightExtractedData
   | PassportExtractedData
   | HotelExtractedData
   | VisaExtractedData
-  | Record<string, unknown>  // fallback para tipos genéricos
+  | Record<string, unknown>
+
+// Resultado completo retornado por la Edge Function parse-document
+export interface ParseDocumentResult {
+  type: string
+  confidence: number
+  raw_text: string
+  fields: Record<string, string | number | null>
+  cached: boolean
+  fileName: string
+  tripId?: string
+  storagePath?: string   // ruta en Storage donde se guardó el archivo (incluido en dedup por hash)
+}
+
+// Input para la mutation de subida y procesamiento de documento
+export interface UploadDocumentInput {
+  tripId?: string
+  fileName: string
+  mimeType: string
+  fileBase64: string
+  fileSizeBytes: number
+}
 
 // Entidad TravelDocument tal como viene de la base de datos
 export interface TravelDocument {

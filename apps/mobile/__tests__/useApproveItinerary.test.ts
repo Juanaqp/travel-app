@@ -38,6 +38,18 @@ vi.mock('@/lib/logger', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }))
 
+vi.mock('@/lib/notifications', () => ({
+  requestPermissions: vi.fn().mockResolvedValue(false),
+  scheduleCheckinReminder: vi.fn().mockResolvedValue(undefined),
+  scheduleAirportReminder: vi.fn().mockResolvedValue(undefined),
+  scheduleDailySummary: vi.fn().mockResolvedValue(undefined),
+  cancelAllTripNotifications: vi.fn().mockResolvedValue(undefined),
+}))
+
+vi.mock('@/lib/offline/reader', () => ({
+  saveItineraryOffline: vi.fn().mockResolvedValue(undefined),
+}))
+
 // Importar la función pura DESPUÉS de los mocks
 import { approveItinerary } from '../hooks/useApproveItinerary'
 import type { ItineraryGraph } from '@travelapp/types'
