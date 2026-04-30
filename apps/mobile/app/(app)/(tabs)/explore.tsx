@@ -1,117 +1,136 @@
-import { useState, useEffect } from 'react'
+import { useState, useRef } from 'react'
 import {
   View,
-  Text,
   ScrollView,
   FlatList,
   Pressable,
   TextInput,
   Alert,
-  ImageBackground,
+  StyleSheet,
   KeyboardAvoidingView,
   Platform,
+  useWindowDimensions,
 } from 'react-native'
 import { router } from 'expo-router'
+import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useExploreFeed } from '@/hooks/useExploreFeed'
 import { useAskAI } from '@/hooks/useAskAI'
 import { useTrips } from '@/hooks/useTrips'
 import { useAuthStore } from '@/stores/useAuthStore'
 import { useExploreStore } from '@/stores/useExploreStore'
 import { useToastStore } from '@/stores/useToastStore'
-import { LoadingSkeleton } from '@/components/LoadingSkeleton'
-import { EmptyState } from '@/components/EmptyState'
+import { useTheme } from '@/hooks/useTheme'
+import { useEffect } from 'react'
+import { theme } from '@/constants/theme'
+import { Text } from '@/components/ui/Text'
+import { Icon } from '@/components/ui/Icon'
+import { Skeleton } from '@/components/ui/Skeleton'
+import {
+  DestinationCard,
+  DestinationCardSkeleton,
+} from '@/components/DestinationCard'
 import type { ExploreDestination, Trip } from '@travelapp/types'
+import type { Continent } from '@travelapp/types'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 // Retorna el primer viaje (useTrips ya filtra deleted_at y ordena por created_at DESC)
 export const getActiveTrip = (trips: Trip[]): Trip | null => trips[0] ?? null
 
+// Genera las iniciales del usuario a partir del email
+const getInitials = (email: string | null | undefined): string => {
+  if (!email) return '?'
+  return email[0].toUpperCase()
+}
+
+// ─── Filtros de continente ────────────────────────────────────────────────────
+
+interface ContinentFilter {
+  label: string
+  value: Continent | null
+}
+
+const CONTINENT_FILTERS: ContinentFilter[] = [
+  { label: 'Todo', value: null },
+  { label: 'Europa', value: 'Europe' },
+  { label: 'Asia', value: 'Asia' },
+  { label: 'Américas', value: 'Americas' },
+  { label: 'África', value: 'Africa' },
+  { label: 'Oceanía', value: 'Oceania' },
+]
+
 // ─── Sub-componentes ──────────────────────────────────────────────────────────
 
-interface DestinationCardProps {
-  destination: ExploreDestination
-  onPress: () => void
-}
-
-const DestinationCard = ({ destination, onPress }: DestinationCardProps) => (
-  <Pressable
-    onPress={onPress}
-    accessibilityRole="button"
-    accessibilityLabel={`Ver destino ${destination.name}`}
-    className="mr-3 overflow-hidden rounded-2xl active:opacity-80"
-    style={{ width: 160, height: 200 }}
-  >
-    <ImageBackground
-      source={{ uri: destination.image_url }}
-      style={{ width: 160, height: 200 }}
-      resizeMode="cover"
-    >
-      <View
-        style={{
-          flex: 1,
-          justifyContent: 'flex-end',
-          padding: 12,
-          backgroundColor: 'rgba(0,0,0,0.42)',
-        }}
-      >
-        <Text className="text-base font-bold text-white" numberOfLines={1}>
-          {destination.name}
-        </Text>
-        {destination.trip_count > 0 && (
-          <Text className="mt-0.5 text-xs text-slate-300">
-            {destination.trip_count}{' '}
-            {destination.trip_count === 1 ? 'viajero lo exploró' : 'viajeros lo exploraron'}
-          </Text>
-        )}
-      </View>
-    </ImageBackground>
-  </Pressable>
-)
-
-const DestinationCardSkeleton = ({ count }: { count: number }) => (
-  <View className="flex-row">
-    {Array.from({ length: count }).map((_, i) => (
-      <View key={i} className="mr-3 rounded-2xl bg-slate-700" style={{ width: 160, height: 200 }} />
-    ))}
-  </View>
-)
-
-interface QuickAccessButtonProps {
-  emoji: string
+interface QuickAccessCardProps {
+  iconName: 'add' | 'flight' | 'budget' | 'ai'
   label: string
   onPress: () => void
+  cardWidth: number
 }
 
-const QuickAccessButton = ({ emoji, label, onPress }: QuickAccessButtonProps) => (
-  <Pressable
-    onPress={onPress}
-    accessibilityRole="button"
-    accessibilityLabel={label}
-    className="flex-1 items-center justify-center rounded-2xl border border-slate-700 bg-slate-800 p-4 active:bg-slate-700"
-    style={{ minHeight: 90 }}
-  >
-    <Text className="mb-1 text-2xl" accessibilityElementsHidden>
-      {emoji}
-    </Text>
-    <Text className="text-center text-xs font-medium text-slate-300">{label}</Text>
-  </Pressable>
-)
+const QuickAccessCard = ({ iconName, label, onPress, cardWidth }: QuickAccessCardProps) => {
+  const { colors, isDark } = useTheme()
+
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      style={({ pressed }) => [
+        styles.quickCard,
+        {
+          width: cardWidth,
+          backgroundColor: colors.background.surface,
+          borderColor: colors.border,
+          transform: [{ scale: pressed ? 0.98 : 1 }],
+          ...(isDark ? {} : theme.shadows.sm),
+        },
+      ]}
+    >
+      <Icon name={iconName} size="lg" color={colors.primary} />
+      <Text
+        variant="label"
+        weight="semibold"
+        color={colors.text.primary}
+        style={styles.quickCardLabel}
+        numberOfLines={1}
+      >
+        {label}
+      </Text>
+    </Pressable>
+  )
+}
 
 // ─── Pantalla principal ───────────────────────────────────────────────────────
 
 export default function ExploreScreen() {
   const [searchQuery, setSearchQuery] = useState('')
-  const { destinations, isLoading: feedLoading } = useExploreFeed()
+  const [activeContinent, setActiveContinent] = useState<Continent | null>(null)
+  const searchInputRef = useRef<TextInput>(null)
+  const scrollRef = useRef<ScrollView>(null)
+
+  const { destinations, isLoading: feedLoading, error: feedError, refetch } = useExploreFeed()
   const { search, status: askStatus } = useAskAI()
   const { data: tripsData } = useTrips()
   const trips = tripsData ?? []
   const { user } = useAuthStore()
   const { setActiveTrip } = useExploreStore()
   const showToast = useToastStore.getState().showToast
+  const { colors, isDark } = useTheme()
+  const insets = useSafeAreaInsets()
+  const { width: screenWidth } = useWindowDimensions()
 
   const activeTrip = getActiveTrip(trips)
   const isSearching = askStatus === 'loading'
+  const userInitials = getInitials(user?.email)
+
+  // Ancho de cada card en la grilla 2×2 (padding horizontal 16×2 + gap 12)
+  const quickCardWidth = (screenWidth - theme.spacing.md * 2 - theme.spacing.sm) / 2
+
+  // Destinos filtrados por continente para la sección inferior
+  const filteredDestinations: ExploreDestination[] = activeContinent
+    ? destinations.filter((d) => d.continent === activeContinent)
+    : destinations
 
   // Sincronizar el viaje activo en el store cuando cambia la lista de viajes
   useEffect(() => {
@@ -154,136 +173,416 @@ export default function ExploreScreen() {
     onHasTrip(activeTrip)
   }
 
+  const focusSearch = () => {
+    scrollRef.current?.scrollTo({ y: 0, animated: true })
+    searchInputRef.current?.focus()
+  }
+
+  // ─── Render ───────────────────────────────────────────────────────────────
+
   return (
     <KeyboardAvoidingView
+      style={[styles.root, { backgroundColor: colors.background.base }]}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      className="flex-1 bg-slate-900"
     >
       <ScrollView
+        ref={scrollRef}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
-        contentContainerStyle={{ paddingBottom: 32 }}
+        contentContainerStyle={{ paddingBottom: 100 }}
       >
-        {/* Header */}
-        <View className="px-4 pb-2 pt-14">
-          <Text className="text-2xl font-bold text-white">Explorar</Text>
-          <Text className="mt-1 text-sm text-slate-400">Descubre tu próximo destino</Text>
-        </View>
-
-        {/* ── SECCIÓN 1: Buscador de inspiración ── */}
-        <View className="mx-4 mt-4 rounded-2xl bg-slate-800 p-4">
-          <Text className="mb-3 text-base font-semibold text-white">¿A dónde quieres ir?</Text>
-          <View className="flex-row items-center gap-2">
-            <View className="flex-1 flex-row items-center rounded-xl bg-slate-700 px-3">
-              <Text className="mr-2 text-slate-400" accessibilityElementsHidden>
-                🔍
-              </Text>
-              <TextInput
-                value={searchQuery}
-                onChangeText={setSearchQuery}
-                placeholder="Roma, Tokio, Bali..."
-                placeholderTextColor="#94a3b8"
-                className="flex-1 py-3 text-white"
-                returnKeyType="search"
-                onSubmitEditing={handleSearch}
-                accessibilityLabel="Buscar destino"
-              />
+        {/* ── 1. Hero Header ─────────────────────────────────────────────── */}
+        <View
+          style={[
+            styles.hero,
+            {
+              paddingTop: insets.top + theme.spacing.md,
+              backgroundColor: colors.background.base,
+            },
+          ]}
+        >
+          {/* Fila de marca: Roamly + notificación + avatar */}
+          <View style={styles.heroTopRow}>
+            <Text variant="heading" weight="bold" color={colors.primary}>
+              Roamly
+            </Text>
+            <View style={styles.heroActions}>
+              <Pressable
+                onPress={() => {}}
+                accessibilityRole="button"
+                accessibilityLabel="Notificaciones"
+                hitSlop={8}
+                style={styles.iconButton}
+              >
+                <Icon name="notification" size="lg" color={colors.text.primary} />
+              </Pressable>
+              {/* Avatar de iniciales */}
+              <View style={[styles.avatar, { backgroundColor: colors.primary }]}>
+                <Text variant="caption" weight="bold" color="#FFFFFF">
+                  {userInitials}
+                </Text>
+              </View>
             </View>
+          </View>
+
+          {/* ── 2. Barra de búsqueda con IA ─── */}
+          <View
+            style={[
+              styles.searchBar,
+              {
+                backgroundColor: colors.background.surface,
+                borderColor: colors.border,
+                ...(isDark ? {} : theme.shadows.sm),
+              },
+            ]}
+          >
+            <Icon name="search" size="md" color={colors.primary} />
+            <TextInput
+              ref={searchInputRef}
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              placeholder="¿A dónde quieres ir?"
+              placeholderTextColor={colors.text.tertiary}
+              style={[styles.searchInput, { color: colors.text.primary }]}
+              returnKeyType="search"
+              onSubmitEditing={handleSearch}
+              accessibilityLabel="Buscar destino"
+            />
+            {/* Pill "Ask AI" */}
             <Pressable
               onPress={handleSearch}
-              disabled={isSearching || !searchQuery.trim()}
+              disabled={isSearching}
               accessibilityRole="button"
-              accessibilityLabel="Buscar"
-              className="rounded-xl bg-indigo-500 px-4 py-3 active:bg-indigo-600"
-              style={{ opacity: isSearching || !searchQuery.trim() ? 0.5 : 1 }}
+              accessibilityLabel="Preguntar a la IA"
+              style={[
+                styles.askAIPill,
+                {
+                  backgroundColor: colors.primary,
+                  opacity: isSearching ? 0.6 : 1,
+                },
+              ]}
             >
-              <Text className="font-semibold text-white">
-                {isSearching ? '...' : 'Buscar'}
-              </Text>
+              {isSearching ? (
+                <Text variant="caption" weight="semibold" color="#FFFFFF">
+                  ...
+                </Text>
+              ) : (
+                <>
+                  <Icon name="ai" size="sm" color="#FFFFFF" />
+                  <Text variant="caption" weight="semibold" color="#FFFFFF">
+                    Ask AI
+                  </Text>
+                </>
+              )}
             </Pressable>
           </View>
-          {isSearching && (
-            <View className="mt-3">
-              <LoadingSkeleton count={1} height={48} />
-            </View>
-          )}
         </View>
 
-        {/* ── SECCIÓN 2: Destinos populares ── */}
-        <View className="mt-6">
-          <Text className="mx-4 mb-3 text-lg font-bold text-white">Destinos populares</Text>
-
-          {feedLoading ? (
-            <View className="pl-4">
-              <DestinationCardSkeleton count={3} />
+        {/* ── 3. Trending destinations ───────────────────────────────────── */}
+        {(feedLoading || destinations.length > 0) && (
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <Text variant="heading" weight="bold" color={colors.text.primary}>
+                Tendencias
+              </Text>
+              <Pressable
+                onPress={() => {}}
+                accessibilityRole="button"
+                accessibilityLabel="Ver todos los destinos"
+              >
+                <Text variant="caption" weight="semibold" color={colors.primary}>
+                  Ver todos
+                </Text>
+              </Pressable>
             </View>
-          ) : destinations.length === 0 ? (
-            <View className="mx-4">
-              <EmptyState
-                title="Sé el primero en explorar"
-                subtitle="Aún no hay destinos populares. ¡Crea tu primer viaje!"
-                actionLabel="Crear viaje"
-                onAction={() => router.push('/(app)/trips/new' as never)}
+
+            {feedLoading ? (
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.horizontalListContent}
+                scrollEnabled={false}
+              >
+                {[0, 1, 2].map((i) => (
+                  <DestinationCardSkeleton key={i} size="large" />
+                ))}
+              </ScrollView>
+            ) : (
+              <FlatList
+                data={destinations}
+                keyExtractor={(item) => item.name}
+                renderItem={({ item }) => (
+                  <DestinationCard
+                    destination={item}
+                    size="large"
+                    onPress={() => handleDestinationPress(item.name)}
+                  />
+                )}
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.horizontalListContent}
               />
-            </View>
-          ) : (
-            <FlatList
-              data={destinations}
-              keyExtractor={(item) => item.name}
-              renderItem={({ item }) => (
-                <DestinationCard
-                  destination={item}
-                  onPress={() => handleDestinationPress(item.name)}
-                />
-              )}
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={{ paddingHorizontal: 16 }}
-            />
-          )}
-        </View>
+            )}
+          </View>
+        )}
 
-        {/* ── SECCIÓN 3: Empieza rápido ── */}
-        <View className="mx-4 mt-6">
-          <Text className="mb-3 text-lg font-bold text-white">Empieza rápido</Text>
-          <View className="flex-row gap-3">
-            <QuickAccessButton
-              emoji="✈️"
+        {/* Error state del feed */}
+        {feedError && !feedLoading && destinations.length === 0 && (
+          <View style={styles.section}>
+            <View style={[styles.errorCard, { backgroundColor: colors.background.surface, borderColor: colors.border }]}>
+              <Text variant="body" color={colors.text.secondary} align="center">
+                No pudimos cargar los destinos
+              </Text>
+              <Pressable
+                onPress={() => { refetch().catch(() => {}) }}
+                style={[styles.retryButton, { borderColor: colors.primary }]}
+                accessibilityRole="button"
+                accessibilityLabel="Reintentar carga de destinos"
+              >
+                <Text variant="label" weight="semibold" color={colors.primary}>
+                  Reintentar
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+        )}
+
+        {/* ── 4. Quick access 2×2 ────────────────────────────────────────── */}
+        <View style={styles.section}>
+          <Text
+            variant="heading"
+            weight="bold"
+            color={colors.text.primary}
+            style={styles.sectionTitle}
+          >
+            Planifica tu viaje
+          </Text>
+          <View style={styles.quickGrid}>
+            <QuickAccessCard
+              iconName="add"
               label="Nuevo viaje"
+              cardWidth={quickCardWidth}
               onPress={() => router.push('/(app)/trips/new' as never)}
             />
-            <QuickAccessButton
-              emoji="📄"
-              label="Escanear documento"
-              onPress={() =>
-                requireActiveTrip('escanear documentos', (trip) =>
-                  router.push(`/(app)/trips/${trip.id}/documents` as never)
-                )
-              }
+            <QuickAccessCard
+              iconName="flight"
+              label="Mis viajes"
+              cardWidth={quickCardWidth}
+              onPress={() => router.navigate('/(app)/(tabs)/' as never)}
             />
           </View>
-          <View className="mt-3 flex-row gap-3">
-            <QuickAccessButton
-              emoji="💸"
-              label="Registrar gasto"
+          <View style={[styles.quickGrid, { marginTop: theme.spacing.sm }]}>
+            <QuickAccessCard
+              iconName="budget"
+              label="Gastos"
+              cardWidth={quickCardWidth}
               onPress={() =>
-                requireActiveTrip('registrar un gasto', (trip) =>
-                  router.push(`/(app)/trips/${trip.id}/expenses/new` as never)
+                requireActiveTrip('ver gastos', (trip) =>
+                  router.push(`/(app)/trips/${trip.id}/expenses` as never)
                 )
               }
             />
-            <QuickAccessButton
-              emoji="🗺️"
-              label="Mis mapas"
-              onPress={() =>
-                requireActiveTrip('ver el mapa', (trip) =>
-                  router.push(`/(app)/trips/${trip.id}/itinerary/map` as never)
-                )
-              }
+            <QuickAccessCard
+              iconName="ai"
+              label="Preguntar IA"
+              cardWidth={quickCardWidth}
+              onPress={focusSearch}
             />
           </View>
         </View>
+
+        {/* ── 5. Explorar por continente ─────────────────────────────────── */}
+        {destinations.length > 0 && (
+          <View style={styles.section}>
+            <Text
+              variant="heading"
+              weight="bold"
+              color={colors.text.primary}
+              style={styles.sectionTitle}
+            >
+              Explorar por zona
+            </Text>
+
+            {/* Pills de filtro */}
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.pillsContent}
+            >
+              {CONTINENT_FILTERS.map((filter) => {
+                const isActive = activeContinent === filter.value
+                return (
+                  <Pressable
+                    key={filter.label}
+                    onPress={() => setActiveContinent(filter.value)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Filtrar por ${filter.label}`}
+                    accessibilityState={{ selected: isActive }}
+                    style={[
+                      styles.pill,
+                      {
+                        backgroundColor: isActive
+                          ? colors.primary
+                          : colors.background.surface,
+                        borderColor: isActive ? colors.primary : colors.border,
+                      },
+                    ]}
+                  >
+                    <Text
+                      variant="caption"
+                      weight="semibold"
+                      color={isActive ? '#FFFFFF' : colors.text.secondary}
+                    >
+                      {filter.label}
+                    </Text>
+                  </Pressable>
+                )
+              })}
+            </ScrollView>
+
+            {/* Cards filtradas */}
+            {filteredDestinations.length > 0 ? (
+              <FlatList
+                data={filteredDestinations}
+                keyExtractor={(item) => `${item.name}-small`}
+                renderItem={({ item }) => (
+                  <DestinationCard
+                    destination={item}
+                    size="small"
+                    onPress={() => handleDestinationPress(item.name)}
+                  />
+                )}
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.horizontalListContent}
+                style={{ marginTop: theme.spacing.md }}
+              />
+            ) : (
+              <View style={styles.emptyContinent}>
+                <Text variant="body" color={colors.text.tertiary} align="center">
+                  No hay destinos en esta zona todavía
+                </Text>
+              </View>
+            )}
+          </View>
+        )}
       </ScrollView>
     </KeyboardAvoidingView>
   )
 }
+
+// ─── Estilos ──────────────────────────────────────────────────────────────────
+
+const styles = StyleSheet.create({
+  root: {
+    flex: 1,
+  },
+  hero: {
+    paddingHorizontal: theme.spacing.md,
+    paddingBottom: theme.spacing.md,
+  },
+  heroTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: theme.spacing.md,
+  },
+  heroActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.sm,
+  },
+  iconButton: {
+    padding: theme.spacing.xs,
+  },
+  avatar: {
+    width: 32,
+    height: 32,
+    borderRadius: theme.radius.full,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  searchBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    height: 52,
+    borderRadius: theme.radius.lg,
+    borderWidth: 1,
+    paddingHorizontal: theme.spacing.md,
+    gap: theme.spacing.sm,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: theme.typography.size.base,
+    height: '100%',
+  },
+  askAIPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: theme.spacing.sm + 2,
+    paddingVertical: 6,
+    borderRadius: theme.radius.full,
+  },
+  section: {
+    marginTop: theme.spacing.lg,
+    paddingHorizontal: theme.spacing.md,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: theme.spacing.md,
+  },
+  sectionTitle: {
+    marginBottom: theme.spacing.md,
+  },
+  horizontalListContent: {
+    paddingLeft: theme.spacing.md,
+    paddingRight: theme.spacing.xs,
+  },
+  quickGrid: {
+    flexDirection: 'row',
+    gap: theme.spacing.sm,
+  },
+  quickCard: {
+    height: 100,
+    borderRadius: theme.radius.xl,
+    borderWidth: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: theme.spacing.md,
+    gap: theme.spacing.sm,
+  },
+  quickCardLabel: {
+    flex: 1,
+  },
+  pillsContent: {
+    paddingRight: theme.spacing.md,
+    gap: theme.spacing.xs,
+  },
+  pill: {
+    height: 36,
+    paddingHorizontal: theme.spacing.md,
+    borderRadius: theme.radius.full,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emptyContinent: {
+    paddingVertical: theme.spacing.xl,
+  },
+  errorCard: {
+    borderRadius: theme.radius.lg,
+    borderWidth: 1,
+    padding: theme.spacing.lg,
+    alignItems: 'center',
+    gap: theme.spacing.md,
+  },
+  retryButton: {
+    borderWidth: 1,
+    borderRadius: theme.radius.md,
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.sm,
+  },
+})

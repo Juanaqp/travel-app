@@ -1,27 +1,30 @@
-// Banner de estado offline
-// Se muestra en la parte superior de las pantallas que soportan modo offline.
-
-import { View, Text, Pressable, Animated } from 'react-native'
+import { Animated, StyleSheet, View } from 'react-native'
 import { useEffect, useRef } from 'react'
+import { useSafeAreaInsets } from 'react-native-safe-area-context'
+import { useTheme } from '@/hooks/useTheme'
+import { theme } from '@/constants/theme'
+import { Text } from '@/components/ui/Text'
+import { Icon } from '@/components/ui/Icon'
 import { useNetworkStatus } from '@/hooks/useNetworkStatus'
 
+const BANNER_HEIGHT = 36
+
 interface OfflineBannerProps {
-  // Pasar false para suprimir el banner en pantallas que no lo necesitan
   visible?: boolean
 }
 
 export const OfflineBanner = ({ visible = true }: OfflineBannerProps) => {
-  const { isOnline, isInternetReachable, pendingOperations, isSyncing, syncNow } =
-    useNetworkStatus()
+  const { colors } = useTheme()
+  const insets = useSafeAreaInsets()
+  const { isOnline, isInternetReachable, pendingOperations } = useNetworkStatus()
 
-  const slideAnim = useRef(new Animated.Value(-48)).current
+  const slideAnim = useRef(new Animated.Value(-BANNER_HEIGHT)).current
 
-  // Calcular si estamos offline de verdad (o aún no determinado = no mostrar)
   const offline = isOnline === false || isInternetReachable === false
 
   useEffect(() => {
     Animated.timing(slideAnim, {
-      toValue: offline && visible ? 0 : -48,
+      toValue: offline && visible ? 0 : -BANNER_HEIGHT,
       duration: 300,
       useNativeDriver: true,
     }).start()
@@ -31,36 +34,62 @@ export const OfflineBanner = ({ visible = true }: OfflineBannerProps) => {
 
   return (
     <Animated.View
-      style={{ transform: [{ translateY: slideAnim }] }}
-      className="absolute top-0 left-0 right-0 z-50 bg-amber-500 flex-row items-center justify-between px-4 py-2"
+      style={[
+        styles.banner,
+        {
+          top: insets.top,
+          backgroundColor: colors.semantic.warning,
+          transform: [{ translateY: slideAnim }],
+        },
+      ]}
       accessibilityRole="alert"
       accessibilityLabel="Sin conexión a internet"
     >
-      <View className="flex-row items-center gap-2">
-        <Text className="text-lg">📡</Text>
-        <View>
-          <Text className="text-white font-semibold text-xs">Sin conexión</Text>
-          {pendingOperations > 0 ? (
-            <Text className="text-amber-100 text-xs">
-              {pendingOperations} cambio{pendingOperations > 1 ? 's' : ''} pendiente{pendingOperations > 1 ? 's' : ''}
-            </Text>
-          ) : (
-            <Text className="text-amber-100 text-xs">Modo solo lectura</Text>
-          )}
-        </View>
+      {/* Lado izquierdo: icono + texto */}
+      <View style={styles.left}>
+        <Icon name="offline" size="sm" color="#FFFFFF" />
+        <Text variant="caption" weight="semibold" color="#FFFFFF">
+          No connection
+        </Text>
       </View>
 
+      {/* Lado derecho: cambios pendientes */}
       {pendingOperations > 0 ? (
-        <Pressable
-          onPress={syncNow}
-          disabled={isSyncing || isOnline !== true}
-          className="rounded-lg bg-white/20 px-3 py-1 active:bg-white/30"
-        >
-          <Text className="text-white text-xs font-semibold">
-            {isSyncing ? 'Sincronizando...' : 'Reintentar'}
+        <View style={[styles.pendingPill, { backgroundColor: 'rgba(0,0,0,0.18)' }]}>
+          <Text style={styles.pendingText}>
+            {pendingOperations} change{pendingOperations !== 1 ? 's' : ''} pending
           </Text>
-        </Pressable>
+        </View>
       ) : null}
     </Animated.View>
   )
 }
+
+const styles = StyleSheet.create({
+  banner: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    height: BANNER_HEIGHT,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: theme.spacing.md,
+    zIndex: 50,
+  },
+  left: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.xs,
+  },
+  pendingPill: {
+    paddingHorizontal: theme.spacing.sm,
+    paddingVertical: 2,
+    borderRadius: theme.radius.full,
+  },
+  pendingText: {
+    fontSize: theme.typography.size.xs,
+    color: '#FFFFFF',
+    fontWeight: '500',
+  },
+})

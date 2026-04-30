@@ -9,9 +9,11 @@ import { supabase } from '@/lib/supabase'
 import { logger } from '@/lib/logger'
 import { useAuthStore } from '@/stores/useAuthStore'
 import { useTimezoneStore } from '@/stores/useTimezoneStore'
+import { useThemeStore } from '@/stores/useThemeStore'
 import { getDb } from '@/lib/offline/db'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { Toast } from '@/components/Toast'
+import { useTheme } from '@/hooks/useTheme'
 import '../global.css'
 
 const queryClient = new QueryClient({
@@ -49,6 +51,9 @@ export default function RootLayout() {
   const [welcomeShown, setWelcomeShown] = useState(true)
   const pathname = usePathname() ?? ''
 
+  // Resolver esquema de color activo para el StatusBar — debe llamarse antes de returns condicionales
+  const { isDark } = useTheme()
+
   useEffect(() => {
     // Verificar onboarding de bienvenida ANTES del check de sesión de Supabase
     AsyncStorage.getItem('onboarding_shown')
@@ -66,6 +71,9 @@ export default function RootLayout() {
 
     // Cargar timezone guardado en AsyncStorage
     useTimezoneStore.getState().loadFromStorage().catch(() => {})
+
+    // Cargar preferencia de tema guardada en AsyncStorage
+    useThemeStore.getState().loadFromStorage().catch(() => {})
 
     // Inicializa el listener de auth — retorna cleanup para desmontar
     const cleanupAuth = useAuthStore.getState().initialize()
@@ -107,7 +115,7 @@ export default function RootLayout() {
     return (
       <ErrorBoundary>
         <GestureHandlerRootView style={{ flex: 1 }}>
-          <StatusBar style="light" />
+          <StatusBar style={isDark ? 'light' : 'dark'} />
           <Redirect href="/onboarding" />
         </GestureHandlerRootView>
       </ErrorBoundary>
@@ -118,7 +126,7 @@ export default function RootLayout() {
     <ErrorBoundary>
       <GestureHandlerRootView style={{ flex: 1 }}>
         <QueryClientProvider client={queryClient}>
-          <StatusBar style="light" />
+          <StatusBar style={isDark ? 'light' : 'dark'} />
           <Stack screenOptions={{ headerShown: false }} />
           {/* Toast fuera del navegador para que sea verdaderamente global */}
           <Toast />

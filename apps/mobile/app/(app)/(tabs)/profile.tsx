@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import {
   View,
-  Text,
   ScrollView,
   Pressable,
   Alert,
@@ -9,28 +8,28 @@ import {
   TextInput,
   ActivityIndicator,
   Linking,
+  StyleSheet,
 } from 'react-native'
 import { router } from 'expo-router'
+import { useTheme } from '@/hooks/useTheme'
+import { theme } from '@/constants/theme'
+import { Text } from '@/components/ui/Text'
+import { Icon } from '@/components/ui/Icon'
+import { ThemeToggle } from '@/components/ui/ThemeToggle'
 import { useAuthStore } from '@/stores/useAuthStore'
 import { useToastStore } from '@/stores/useToastStore'
 import { useProfile, useProfileStats } from '@/hooks/useProfile'
 import { logger } from '@/lib/logger'
 import { supabase } from '@/lib/supabase'
 import type { UserProfile } from '@travelapp/types'
+import type { IconName } from '@/constants/icons'
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+// ─── Helpers (exportados para tests) ─────────────────────────────────────────
 
-// Genera un color de avatar determinista a partir del email
 export const generateAvatarColor = (email: string): string => {
   const colors = [
-    '#6366F1', // indigo-500
-    '#8B5CF6', // violet-500
-    '#EC4899', // pink-500
-    '#F59E0B', // amber-500
-    '#10B981', // emerald-500
-    '#3B82F6', // blue-500
-    '#EF4444', // red-500
-    '#14B8A6', // teal-500
+    '#6366F1', '#8B5CF6', '#EC4899', '#F59E0B',
+    '#10B981', '#3B82F6', '#EF4444', '#14B8A6',
   ]
   let hash = 0
   for (let i = 0; i < email.length; i++) {
@@ -39,7 +38,6 @@ export const generateAvatarColor = (email: string): string => {
   return colors[Math.abs(hash) % colors.length]
 }
 
-// Iniciales a partir del nombre completo o email
 const getInitials = (profile: UserProfile): string => {
   if (profile.fullName) {
     const parts = profile.fullName.trim().split(/\s+/)
@@ -50,7 +48,7 @@ const getInitials = (profile: UserProfile): string => {
   return profile.email.slice(0, 2).toUpperCase()
 }
 
-// Color dinámico de la barra de uso de IA
+// Mantenido para compatibilidad con tests — devuelve clase NativeWind (no usado en UI nueva)
 export const getUsageBarColor = (used: number, limit: number): string => {
   const ratio = limit > 0 ? used / limit : 0
   if (ratio >= 0.9) return 'bg-red-500'
@@ -60,69 +58,75 @@ export const getUsageBarColor = (used: number, limit: number): string => {
 
 // ─── Sub-componentes ──────────────────────────────────────────────────────────
 
-interface SectionProps {
-  title: string
-  children: React.ReactNode
-}
-
-const Section = ({ title, children }: SectionProps) => (
-  <View className="mx-4 mt-6">
-    <Text className="mb-3 text-xs font-semibold uppercase tracking-widest text-slate-500">
-      {title}
-    </Text>
-    <View className="overflow-hidden rounded-2xl bg-slate-800">
-      {children}
-    </View>
-  </View>
-)
-
-interface RowProps {
+interface SettingsRowProps {
+  icon: IconName
   label: string
-  value?: string
   onPress?: () => void
-  showChevron?: boolean
+  rightElement?: React.ReactNode
   destructive?: boolean
   last?: boolean
 }
 
-const Row = ({ label, value, onPress, showChevron = false, destructive = false, last = false }: RowProps) => (
-  <Pressable
-    onPress={onPress}
-    disabled={!onPress}
-    className={`flex-row items-center justify-between px-4 py-4 active:bg-slate-700
-      ${!last ? 'border-b border-slate-700/60' : ''}`}
-    accessibilityRole={onPress ? 'button' : 'text'}
-    accessibilityLabel={label}
-  >
-    <Text className={`flex-1 text-base ${destructive ? 'text-red-400' : 'text-slate-200'}`}>
-      {label}
-    </Text>
-    <View className="flex-row items-center gap-2">
-      {value !== undefined && (
-        <Text className="text-sm text-slate-500">{value}</Text>
-      )}
-      {showChevron && (
-        <Text className="text-slate-600">›</Text>
-      )}
+const SettingsRow = ({ icon, label, onPress, rightElement, destructive = false, last = false }: SettingsRowProps) => {
+  const { colors } = useTheme()
+  return (
+    <Pressable
+      onPress={onPress}
+      disabled={!onPress && !rightElement}
+      accessibilityRole={onPress ? 'button' : 'none'}
+      accessibilityLabel={label}
+      style={[
+        styles.row,
+        !last && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
+      ]}
+    >
+      <Icon
+        name={icon}
+        size="md"
+        color={destructive ? colors.semantic.danger : colors.text.secondary}
+      />
+      <Text
+        variant="body"
+        color={destructive ? colors.semantic.danger : colors.text.primary}
+        style={styles.rowLabel}
+      >
+        {label}
+      </Text>
+      {rightElement ?? (onPress ? <Icon name="forward" size="sm" color={colors.text.tertiary} /> : null)}
+    </Pressable>
+  )
+}
+
+interface SectionCardProps {
+  title: string
+  children: React.ReactNode
+}
+
+const SectionCard = ({ title, children }: SectionCardProps) => {
+  const { colors } = useTheme()
+  return (
+    <View style={styles.sectionCard}>
+      <Text
+        variant="caption"
+        weight="semibold"
+        color={colors.text.tertiary}
+        style={styles.sectionTitle}
+      >
+        {title.toUpperCase()}
+      </Text>
+      <View style={[styles.sectionCardBody, { backgroundColor: colors.background.elevated, borderColor: colors.border }]}>
+        {children}
+      </View>
     </View>
-  </Pressable>
-)
-
-const PLAN_COLORS: Record<string, string> = {
-  free:  'bg-slate-700 text-slate-300',
-  pro:   'bg-indigo-600 text-white',
-  team:  'bg-violet-600 text-white',
+  )
 }
 
-const PLAN_LABELS: Record<string, string> = {
-  free:  'Free',
-  pro:   'Pro',
-  team:  'Team',
-}
+const PLAN_LABELS: Record<string, string> = { free: 'Free', pro: 'Pro', team: 'Team' }
 
 // ─── Pantalla principal ───────────────────────────────────────────────────────
 
 export default function ProfileScreen() {
+  const { colors } = useTheme()
   const { user, signOut } = useAuthStore()
   const showToast = useToastStore.getState().showToast
   const { data: profile, isLoading: profileLoading } = useProfile()
@@ -135,28 +139,24 @@ export default function ProfileScreen() {
   const [isSigningOut, setIsSigningOut] = useState(false)
 
   const handleSignOut = () => {
-    Alert.alert(
-      'Cerrar sesión',
-      '¿Estás seguro que quieres cerrar sesión?',
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        {
-          text: 'Cerrar sesión',
-          style: 'destructive',
-          onPress: async () => {
-            setIsSigningOut(true)
-            try {
-              await signOut()
-            } catch (error) {
-              logger.error('Error al cerrar sesión desde perfil', { error })
-              showToast('No se pudo cerrar sesión. Inténtalo de nuevo.', 'error')
-            } finally {
-              setIsSigningOut(false)
-            }
-          },
+    Alert.alert('Cerrar sesión', '¿Estás seguro que quieres cerrar sesión?', [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Cerrar sesión',
+        style: 'destructive',
+        onPress: async () => {
+          setIsSigningOut(true)
+          try {
+            await signOut()
+          } catch (error) {
+            logger.error('Error al cerrar sesión desde perfil', { error })
+            showToast('No se pudo cerrar sesión. Inténtalo de nuevo.', 'error')
+          } finally {
+            setIsSigningOut(false)
+          }
         },
-      ]
-    )
+      },
+    ])
   }
 
   const handleOpenDeleteModal = () => {
@@ -167,18 +167,14 @@ export default function ProfileScreen() {
 
   const handleDeleteAccount = async () => {
     if (deleteConfirmText !== 'ELIMINAR') return
-
     setIsDeleting(true)
     try {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) throw new Error('Sin sesión activa')
-
       const { error } = await supabase.functions.invoke('delete-account', {
         headers: { Authorization: `Bearer ${session.access_token}` },
       })
-
       if (error) throw error
-
       setDeleteModalVisible(false)
       showToast('Tu cuenta ha sido eliminada', 'info')
       await signOut()
@@ -192,209 +188,165 @@ export default function ProfileScreen() {
 
   if (profileLoading) {
     return (
-      <View className="flex-1 items-center justify-center bg-slate-900">
-        <ActivityIndicator size="large" color="#6366F1" />
+      <View style={[styles.loadingContainer, { backgroundColor: colors.background.base }]}>
+        <ActivityIndicator size="large" color={colors.primary} />
       </View>
     )
   }
 
   const displayEmail = profile?.email ?? user?.email ?? ''
   const initials = profile ? getInitials(profile) : displayEmail.slice(0, 2).toUpperCase()
-  const avatarColor = generateAvatarColor(displayEmail)
   const plan = profile?.plan ?? 'free'
   const aiUsed = profile?.aiMessagesUsedThisMonth ?? 0
   const aiLimit = profile?.aiMessagesLimit ?? 20
-  const usageRatio = aiLimit > 0 ? aiUsed / aiLimit : 0
-  const usageBarClass = getUsageBarColor(aiUsed, aiLimit)
+  const usageRatio = aiLimit > 0 ? Math.min(aiUsed / aiLimit, 1) : 0
 
-  const interestLabels: Record<string, string> = {
-    culture: 'Cultura', gastronomy: 'Gastronomía', nature: 'Naturaleza',
-    adventure: 'Aventura', beach: 'Playa', city: 'Ciudad', photography: 'Fotografía',
-  }
-  const paceLabels: Record<string, string> = {
-    slow: 'Relajado', moderate: 'Moderado', intense: 'Intenso',
-  }
-  const budgetLabels: Record<string, string> = {
-    budget: 'Económico', mid: 'Moderado', premium: 'Premium', luxury: 'Lujo',
-  }
+  // Color de la barra de uso (calculado aquí, sin NativeWind)
+  const usageBarColor =
+    usageRatio >= 0.9
+      ? colors.semantic.danger
+      : usageRatio >= 0.6
+      ? colors.semantic.warning
+      : colors.semantic.success
+
+  const STAT_ITEMS = [
+    { label: 'Viajes', value: String(stats?.totalTrips ?? 0) },
+    { label: 'Países', value: String(stats?.countriesVisited ?? 0) },
+    { label: 'Itinerarios', value: String(stats?.itinerariesGenerated ?? 0) },
+    { label: 'Gastos USD', value: `$${Math.round(stats?.totalExpensesUSD ?? 0)}` },
+  ]
 
   return (
     <ScrollView
-      className="flex-1 bg-slate-900"
+      style={[styles.scroll, { backgroundColor: colors.background.base }]}
+      contentContainerStyle={styles.scrollContent}
       showsVerticalScrollIndicator={false}
-      contentContainerStyle={{ paddingBottom: 48 }}
     >
-      {/* ── ENCABEZADO: Avatar + nombre + plan ── */}
-      <View className="items-center px-4 pb-6 pt-16">
-        <View
-          className="mb-3 h-[72px] w-[72px] items-center justify-center rounded-full"
-          style={{ backgroundColor: avatarColor }}
-          accessibilityLabel={`Avatar de ${displayEmail}`}
-        >
-          <Text className="text-2xl font-bold text-white">{initials}</Text>
+      {/* ── Sección avatar ─────────────────────────────────────────────── */}
+      <View style={[styles.avatarCard, { backgroundColor: colors.background.surface }]}>
+        <View style={[styles.avatar, { backgroundColor: colors.primary }]}>
+          <Text style={styles.initials}>{initials}</Text>
         </View>
-
         {profile?.fullName ? (
-          <Text className="text-xl font-bold text-white">{profile.fullName}</Text>
+          <Text variant="subheading" weight="bold" color={colors.text.primary} align="center">
+            {profile.fullName}
+          </Text>
         ) : null}
-        <Text className="mt-0.5 text-sm text-slate-400">{displayEmail}</Text>
-
-        <View className={`mt-3 rounded-full px-3 py-1 ${PLAN_COLORS[plan] ?? 'bg-slate-700 text-slate-300'}`}>
-          <Text className="text-xs font-semibold">{PLAN_LABELS[plan] ?? plan}</Text>
+        <Text variant="caption" color={colors.text.secondary} align="center">
+          {displayEmail}
+        </Text>
+        <View style={[styles.planBadge, { borderColor: colors.primary }]}>
+          <Text style={[styles.planBadgeText, { color: colors.primary }]}>
+            {PLAN_LABELS[plan] ?? plan}
+          </Text>
         </View>
       </View>
 
-      {/* ── SECCIÓN: Uso de IA ── */}
-      <Section title="Uso de IA este mes">
-        <View className="px-4 py-4">
-          <View className="mb-2 flex-row items-end justify-between">
-            <Text className="text-base font-semibold text-white">
-              {aiUsed}{' '}
-              <Text className="text-sm font-normal text-slate-400">/ {aiLimit} mensajes</Text>
+      {/* ── Grid de estadísticas ──────────────────────────────────────── */}
+      <View style={[styles.statsGrid, { backgroundColor: colors.background.elevated, borderColor: colors.border }]}>
+        {STAT_ITEMS.map((stat, i) => (
+          <View
+            key={stat.label}
+            style={[
+              styles.statCell,
+              i % 2 === 0 && { borderRightWidth: StyleSheet.hairlineWidth, borderRightColor: colors.border },
+              i < 2 && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
+            ]}
+          >
+            <Text style={[styles.statValue, { color: colors.text.primary }]}>{stat.value}</Text>
+            <Text variant="caption" color={colors.text.tertiary}>{stat.label}</Text>
+          </View>
+        ))}
+      </View>
+
+      {/* ── Uso de IA ─────────────────────────────────────────────────── */}
+      <SectionCard title="Uso de IA">
+        <View style={styles.aiUsageContent}>
+          <View style={styles.aiUsageHeader}>
+            <Text variant="body" weight="semibold" color={colors.text.primary}>
+              AI Usage this month
             </Text>
-            <Text className="text-xs text-slate-500">
-              {Math.round(usageRatio * 100)}%
+            <Text variant="caption" color={colors.text.tertiary}>
+              Resets on the 1st
             </Text>
           </View>
-
-          {/* Barra de progreso */}
-          <View className="mb-3 h-2 overflow-hidden rounded-full bg-slate-700">
+          <View style={[styles.progressTrack, { backgroundColor: colors.border }]}>
             <View
-              className={`h-2 rounded-full ${usageBarClass}`}
-              style={{ width: `${Math.min(usageRatio * 100, 100)}%` }}
+              style={[
+                styles.progressFill,
+                { width: `${usageRatio * 100}%`, backgroundColor: usageBarColor },
+              ]}
             />
           </View>
-
-          {usageRatio >= 0.9 ? (
-            <Text className="text-xs text-red-400">
-              Estás cerca del límite. Se reinicia el 1 del próximo mes.
-            </Text>
-          ) : usageRatio >= 0.6 ? (
-            <Text className="text-xs text-amber-400">
-              Llevas más de la mitad del límite mensual.
-            </Text>
-          ) : (
-            <Text className="text-xs text-slate-500">
-              Se reinicia el 1 de cada mes.
-            </Text>
-          )}
-
-          {plan === 'free' && (
-            <Pressable
-              onPress={() => showToast('Planes Pro próximamente disponibles', 'info')}
-              className="mt-3 items-center rounded-xl bg-indigo-600 py-3 active:bg-indigo-700"
-              accessibilityRole="button"
-              accessibilityLabel="Actualizar a Pro"
-            >
-              <Text className="text-sm font-semibold text-white">Actualizar a Pro →</Text>
-            </Pressable>
-          )}
+          <Text variant="caption" color={colors.text.secondary}>
+            {aiUsed} of {aiLimit} messages used
+          </Text>
         </View>
-      </Section>
+      </SectionCard>
 
-      {/* ── SECCIÓN: Preferencias ── */}
-      <Section title="Preferencias">
-        <Row
-          label="Zona horaria"
-          value={profile?.timezone ?? '—'}
-          last={false}
+      {/* ── Sección 1: Cuenta ─────────────────────────────────────────── */}
+      <SectionCard title="Cuenta">
+        <SettingsRow
+          icon="edit"
+          label="Edit profile"
+          onPress={() => router.push('/(app)/profile/edit' as never)}
         />
-        <Row
-          label="Moneda"
-          value={profile?.preferredCurrency ?? '—'}
-          last={false}
+        <SettingsRow
+          icon="notification"
+          label="Notifications"
+          onPress={() => {}}
+          last
         />
-        <Row
-          label="Ritmo de viaje"
-          value={profile?.preferredPace ? paceLabels[profile.preferredPace] : '—'}
-          last={false}
-        />
-        <Row
-          label="Intereses"
-          value={
-            profile?.travelInterests?.length
-              ? profile.travelInterests.map((i) => interestLabels[i] ?? i).join(', ')
-              : '—'
-          }
-          last={false}
-        />
-        <Row
-          label="Presupuesto habitual"
-          value={profile?.preferredBudget ? budgetLabels[profile.preferredBudget] : '—'}
-          last={true}
-        />
-      </Section>
+      </SectionCard>
 
-      <Pressable
-        onPress={() => router.push('/(app)/profile/edit' as never)}
-        className="mx-4 mt-3 items-center rounded-xl border border-slate-700 py-3 active:bg-slate-800"
-        accessibilityRole="button"
-        accessibilityLabel="Editar preferencias"
-      >
-        <Text className="text-sm font-medium text-slate-300">Editar preferencias</Text>
-      </Pressable>
-
-      {/* ── SECCIÓN: Estadísticas ── */}
-      <Section title="Mis estadísticas">
-        <View className="flex-row flex-wrap">
-          {[
-            { label: 'Viajes', value: String(stats?.totalTrips ?? 0) },
-            { label: 'Países', value: String(stats?.countriesVisited ?? 0) },
-            { label: 'Itinerarios', value: String(stats?.itinerariesGenerated ?? 0) },
-            { label: 'Gastos USD', value: `$${Math.round(stats?.totalExpensesUSD ?? 0)}` },
-          ].map((stat, i, arr) => (
-            <View
-              key={stat.label}
-              className={`items-center py-4 ${
-                i % 2 === 0 ? 'border-r border-slate-700/60' : ''
-              } ${i < arr.length - 2 ? 'border-b border-slate-700/60' : ''}`}
-              style={{ width: '50%' }}
-            >
-              <Text className="text-2xl font-bold text-white">{stat.value}</Text>
-              <Text className="mt-0.5 text-xs text-slate-500">{stat.label}</Text>
-            </View>
-          ))}
-        </View>
-      </Section>
-
-      {/* ── SECCIÓN: Cuenta ── */}
-      <Section title="Cuenta">
-        <Row
-          label="Notificaciones"
-          onPress={() => router.push('/(app)/trips/' as never)}
-          showChevron
-          last={false}
+      {/* ── Sección 2: Apariencia ─────────────────────────────────────── */}
+      <SectionCard title="Apariencia">
+        <SettingsRow
+          icon="theme"
+          label="Theme"
+          rightElement={<ThemeToggle />}
+          last
         />
-        <Row
-          label="Política de privacidad"
+      </SectionCard>
+
+      {/* ── Sección 3: Soporte ───────────────────────────────────────── */}
+      <SectionCard title="Soporte">
+        <SettingsRow
+          icon="ai"
+          label="Help & feedback"
+          onPress={() => showToast('Feedback próximamente', 'info')}
+        />
+        <SettingsRow
+          icon="visa"
+          label="Privacy policy"
           onPress={() => Linking.openURL('https://travelapp.example.com/privacy')}
-          showChevron
-          last={false}
         />
-        <Row
-          label="Versión"
-          value="1.0.0"
-          last={false}
+        <SettingsRow
+          icon="visa"
+          label="Terms of service"
+          onPress={() => Linking.openURL('https://travelapp.example.com/terms')}
+          last
         />
-        <Row
-          label={isSigningOut ? 'Cerrando sesión...' : 'Cerrar sesión'}
+      </SectionCard>
+
+      {/* ── Sección 4: Zona de peligro ────────────────────────────────── */}
+      <SectionCard title="Cuenta">
+        <SettingsRow
+          icon="logout"
+          label={isSigningOut ? 'Cerrando sesión...' : 'Sign out'}
           onPress={isSigningOut ? undefined : handleSignOut}
           destructive
-          last={true}
         />
-      </Section>
+        <SettingsRow
+          icon="delete"
+          label="Delete account"
+          onPress={handleOpenDeleteModal}
+          destructive
+          last
+        />
+      </SectionCard>
 
-      {/* Eliminar cuenta */}
-      <Pressable
-        onPress={handleOpenDeleteModal}
-        className="mx-4 mt-4 items-center py-3"
-        accessibilityRole="button"
-        accessibilityLabel="Eliminar cuenta"
-      >
-        <Text className="text-sm text-red-500">Eliminar cuenta</Text>
-      </Pressable>
-
-      {/* ── MODAL: Eliminar cuenta (2 pasos) ── */}
+      {/* ── Modal: Eliminar cuenta (2 pasos) ─────────────────────────── */}
       <Modal
         visible={deleteModalVisible}
         transparent
@@ -402,84 +354,79 @@ export default function ProfileScreen() {
         onRequestClose={() => setDeleteModalVisible(false)}
       >
         <Pressable
-          className="flex-1 items-center justify-center bg-black/60"
+          style={[styles.modalOverlay, { backgroundColor: colors.overlay }]}
           onPress={() => !isDeleting && setDeleteModalVisible(false)}
         >
           <Pressable
-            className="mx-6 w-full rounded-2xl bg-slate-800 p-6"
+            style={[styles.modalCard, { backgroundColor: colors.background.elevated }]}
             onPress={(e) => e.stopPropagation()}
           >
             {deleteStep === 1 ? (
               <>
-                <Text className="mb-2 text-lg font-bold text-white">
+                <Text variant="subheading" weight="bold" color={colors.text.primary} style={styles.modalTitle}>
                   ¿Eliminar tu cuenta?
                 </Text>
-                <Text className="mb-6 text-sm leading-5 text-slate-400">
+                <Text variant="body" color={colors.text.secondary} style={styles.modalBody}>
                   Esta acción es permanente e irreversible. Se borrarán todos tus viajes,
                   itinerarios, gastos y documentos.
                 </Text>
-                <View className="flex-row gap-3">
+                <View style={styles.modalActions}>
                   <Pressable
                     onPress={() => setDeleteModalVisible(false)}
-                    className="flex-1 rounded-xl border border-slate-600 py-3 active:bg-slate-700"
+                    style={[styles.modalBtn, { backgroundColor: colors.background.surface, borderColor: colors.border }]}
                   >
-                    <Text className="text-center text-sm font-medium text-slate-300">
-                      Cancelar
-                    </Text>
+                    <Text variant="body" weight="semibold" color={colors.text.secondary}>Cancelar</Text>
                   </Pressable>
                   <Pressable
                     onPress={() => setDeleteStep(2)}
-                    className="flex-1 rounded-xl bg-red-600 py-3 active:bg-red-700"
+                    style={[styles.modalBtn, styles.modalBtnDanger, { backgroundColor: colors.semantic.danger }]}
                   >
-                    <Text className="text-center text-sm font-semibold text-white">
-                      Continuar
-                    </Text>
+                    <Text variant="body" weight="semibold" color="#FFFFFF">Continuar</Text>
                   </Pressable>
                 </View>
               </>
             ) : (
               <>
-                <Text className="mb-2 text-lg font-bold text-white">
+                <Text variant="subheading" weight="bold" color={colors.text.primary} style={styles.modalTitle}>
                   Confirma la eliminación
                 </Text>
-                <Text className="mb-4 text-sm text-slate-400">
-                  Escribe{' '}
-                  <Text className="font-bold text-white">ELIMINAR</Text>
-                  {' '}para confirmar.
+                <Text variant="body" color={colors.text.secondary} style={styles.modalBody}>
+                  Escribe <Text variant="body" weight="bold" color={colors.text.primary}>ELIMINAR</Text> para confirmar.
                 </Text>
                 <TextInput
                   value={deleteConfirmText}
                   onChangeText={setDeleteConfirmText}
                   placeholder="ELIMINAR"
-                  placeholderTextColor="#475569"
+                  placeholderTextColor={colors.text.tertiary}
                   autoCapitalize="characters"
                   autoCorrect={false}
-                  className="mb-5 rounded-xl bg-slate-700 px-4 py-3 text-base text-white"
-                  accessibilityLabel="Escribe ELIMINAR para confirmar"
+                  style={[
+                    styles.modalInput,
+                    { backgroundColor: colors.background.surface, borderColor: colors.border, color: colors.text.primary },
+                  ]}
                   editable={!isDeleting}
                 />
-                <View className="flex-row gap-3">
+                <View style={styles.modalActions}>
                   <Pressable
                     onPress={() => { setDeleteStep(1); setDeleteConfirmText('') }}
                     disabled={isDeleting}
-                    className="flex-1 rounded-xl border border-slate-600 py-3 active:bg-slate-700"
+                    style={[styles.modalBtn, { backgroundColor: colors.background.surface, borderColor: colors.border }]}
                   >
-                    <Text className="text-center text-sm font-medium text-slate-300">
-                      Atrás
-                    </Text>
+                    <Text variant="body" weight="semibold" color={colors.text.secondary}>Atrás</Text>
                   </Pressable>
                   <Pressable
                     onPress={handleDeleteAccount}
                     disabled={deleteConfirmText !== 'ELIMINAR' || isDeleting}
-                    className="flex-1 rounded-xl bg-red-600 py-3 active:bg-red-700"
-                    style={{ opacity: deleteConfirmText !== 'ELIMINAR' || isDeleting ? 0.5 : 1 }}
+                    style={[
+                      styles.modalBtn,
+                      styles.modalBtnDanger,
+                      { backgroundColor: colors.semantic.danger, opacity: deleteConfirmText !== 'ELIMINAR' || isDeleting ? 0.5 : 1 },
+                    ]}
                   >
                     {isDeleting ? (
                       <ActivityIndicator size="small" color="#fff" />
                     ) : (
-                      <Text className="text-center text-sm font-semibold text-white">
-                        Eliminar
-                      </Text>
+                      <Text variant="body" weight="semibold" color="#FFFFFF">Eliminar</Text>
                     )}
                   </Pressable>
                 </View>
@@ -491,3 +438,160 @@ export default function ProfileScreen() {
     </ScrollView>
   )
 }
+
+// ─── Estilos ──────────────────────────────────────────────────────────────────
+
+const styles = StyleSheet.create({
+  loadingContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  scroll: {
+    flex: 1,
+  },
+  scrollContent: {
+    paddingBottom: 48,
+  },
+  // Avatar card
+  avatarCard: {
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    height: 180,
+    paddingBottom: theme.spacing.lg,
+    gap: theme.spacing.xs,
+    paddingTop: 56, // espacio para status bar
+  },
+  avatar: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: theme.spacing.xs,
+  },
+  initials: {
+    fontSize: theme.typography.size.xxl,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  planBadge: {
+    paddingHorizontal: 12,
+    paddingVertical: 3,
+    borderRadius: theme.radius.full,
+    borderWidth: 1.5,
+    marginTop: 2,
+  },
+  planBadgeText: {
+    fontSize: theme.typography.size.xs,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+  },
+  // Stats grid
+  statsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginHorizontal: theme.spacing.md,
+    marginTop: theme.spacing.md,
+    borderRadius: theme.radius.lg,
+    borderWidth: StyleSheet.hairlineWidth,
+    overflow: 'hidden',
+  },
+  statCell: {
+    width: '50%',
+    alignItems: 'center',
+    paddingVertical: theme.spacing.md,
+    gap: 4,
+  },
+  statValue: {
+    fontSize: theme.typography.size.xl,
+    fontWeight: '700',
+  },
+  // Settings sections
+  sectionCard: {
+    marginHorizontal: theme.spacing.md,
+    marginTop: theme.spacing.lg,
+  },
+  sectionTitle: {
+    letterSpacing: 0.5,
+    marginBottom: theme.spacing.xs,
+  },
+  sectionCardBody: {
+    borderRadius: theme.radius.lg,
+    borderWidth: StyleSheet.hairlineWidth,
+    overflow: 'hidden',
+  },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    height: 52,
+    paddingHorizontal: theme.spacing.md,
+    gap: theme.spacing.sm,
+  },
+  rowLabel: {
+    flex: 1,
+  },
+  // AI usage
+  aiUsageContent: {
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.md,
+    gap: theme.spacing.sm,
+  },
+  aiUsageHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  progressTrack: {
+    height: 6,
+    borderRadius: theme.radius.full,
+    overflow: 'hidden',
+  },
+  progressFill: {
+    height: 6,
+    borderRadius: theme.radius.full,
+  },
+  // Delete modal
+  modalOverlay: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalCard: {
+    marginHorizontal: theme.spacing.lg,
+    width: '100%',
+    maxWidth: 360,
+    borderRadius: theme.radius.xl,
+    padding: theme.spacing.lg,
+  },
+  modalTitle: {
+    marginBottom: theme.spacing.sm,
+  },
+  modalBody: {
+    marginBottom: theme.spacing.lg,
+    lineHeight: 22,
+  },
+  modalInput: {
+    borderWidth: 1,
+    borderRadius: theme.radius.md,
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: 12,
+    fontSize: theme.typography.size.base,
+    marginBottom: theme.spacing.md,
+  },
+  modalActions: {
+    flexDirection: 'row',
+    gap: theme.spacing.sm,
+  },
+  modalBtn: {
+    flex: 1,
+    height: 46,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: theme.radius.md,
+    borderWidth: 1,
+  },
+  modalBtnDanger: {
+    borderColor: 'transparent',
+  },
+})

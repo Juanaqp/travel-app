@@ -1,8 +1,13 @@
-import { View, Text, Image, Pressable, Alert } from 'react-native'
-import { Badge } from '@/components/Badge'
+import { Alert, Pressable, StyleSheet, View } from 'react-native'
+import ReanimatedSwipeable from 'react-native-gesture-handler/ReanimatedSwipeable'
+import { useTheme } from '@/hooks/useTheme'
+import { theme } from '@/constants/theme'
+import { Text } from '@/components/ui/Text'
+import { Icon } from '@/components/ui/Icon'
 import type { TravelDocument, DocumentType, DocumentExtractedData } from '@travelapp/types'
+import type { IconName } from '@/constants/icons'
 
-// ─── Configuración visual por tipo de documento ───────────────────────────────
+// ─── Configuración visual por tipo ───────────────────────────────────────────
 
 const TYPE_LABELS: Record<DocumentType, string> = {
   flight: 'Vuelo',
@@ -15,212 +20,166 @@ const TYPE_LABELS: Record<DocumentType, string> = {
   other: 'Otro',
 }
 
-const TYPE_EMOJIS: Record<DocumentType, string> = {
-  flight: '✈️',
-  hotel: '🏨',
-  visa: '🛂',
-  passport: '📗',
-  car_rental: '🚗',
-  insurance: '🛡️',
-  tour: '🗺️',
-  other: '📄',
+const TYPE_ICON_NAME: Partial<Record<DocumentType, IconName>> = {
+  passport: 'passport',
+  visa: 'visa',
+  flight: 'flight',
+  hotel: 'hotel',
+  insurance: 'checkin',
 }
 
-const TYPE_BADGE_VARIANTS: Record<DocumentType, 'default' | 'success' | 'warning' | 'danger' | 'info'> = {
-  flight: 'info',
-  hotel: 'success',
-  visa: 'warning',
-  passport: 'warning',
-  car_rental: 'default',
-  insurance: 'default',
-  tour: 'success',
-  other: 'default',
-}
-
-// ─── Nivel de confianza ───────────────────────────────────────────────────────
-
-const getConfidenceLabel = (confidence: number): string => {
-  if (confidence >= 0.8) return 'Alta'
-  if (confidence >= 0.5) return 'Media'
-  return 'Baja'
-}
-
-const getConfidenceVariant = (
-  confidence: number
-): 'success' | 'warning' | 'danger' => {
-  if (confidence >= 0.8) return 'success'
-  if (confidence >= 0.5) return 'warning'
-  return 'danger'
-}
-
-// ─── Campos clave según tipo de documento ────────────────────────────────────
-// Retorna los 4 campos más relevantes para mostrar en la tarjeta
-
-const KEY_FIELDS_BY_TYPE: Record<string, string[]> = {
-  boarding_pass: ['flightNumber', 'passenger', 'origin', 'destination', 'seat', 'boardingTime'],
-  hotel_confirmation: ['hotelName', 'checkInDate', 'checkOutDate', 'roomType', 'confirmationNumber'],
-  visa: ['country', 'visaType', 'validFrom', 'validUntil'],
-  passport: ['firstName', 'lastName', 'documentNumber', 'nationality', 'expiryDate'],
-  car_rental: ['company', 'pickupDate', 'returnDate', 'carType'],
-  insurance: ['provider', 'coverageType', 'validFrom', 'validUntil'],
-  tour: ['tourName', 'date', 'time', 'participants'],
-  ticket: ['eventName', 'venue', 'date', 'seat'],
-  receipt: ['merchant', 'date', 'totalAmount', 'currency'],
-}
-
-const getKeyFields = (
-  parsedType: string,
-  fields: Record<string, unknown>
-): Array<{ label: string; value: string }> => {
-  const priorityKeys = KEY_FIELDS_BY_TYPE[parsedType] ?? Object.keys(fields)
-  const result: Array<{ label: string; value: string }> = []
-
-  for (const key of priorityKeys) {
-    if (result.length >= 4) break
-    const value = fields[key]
-    if (value !== null && value !== undefined && String(value).trim() !== '') {
-      // Convierte camelCase a texto legible: "flightNumber" → "flight Number"
-      const label = key.replace(/([A-Z])/g, ' $1').trim()
-      result.push({ label, value: String(value) })
-    }
-  }
-
-  return result
+const TYPE_ICON_COLOR: Partial<Record<DocumentType, string>> = {
+  passport: '#007AFF',
+  visa: '#8B5CF6',
+  flight: '#FF9500',
+  hotel: '#00A699',
+  insurance: '#00A699',
 }
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
 interface DocumentCardProps {
   document: TravelDocument
-  thumbnailUrl?: string        // URL firmada de miniatura generada por Supabase image transform
-  isCachedOffline?: boolean    // true si el archivo está descargado localmente
+  onPress?: () => void
   onDelete?: (id: string) => void
 }
 
-// ─── Componente principal ─────────────────────────────────────────────────────
+// ─── DocumentCard ─────────────────────────────────────────────────────────────
 
-export const DocumentCard = ({ document, thumbnailUrl, isCachedOffline, onDelete }: DocumentCardProps) => {
-  const extracted = document.extractedData as Partial<DocumentExtractedData>
-  const parsedType = extracted.type ?? document.type
-  const confidence = extracted.confidence ?? 0
-  const fields = (extracted.fields as Record<string, unknown>) ?? {}
-  const keyFields = getKeyFields(parsedType, fields)
-  const hasAiData = extracted.confidence !== undefined
+export const DocumentCard = ({ document, onPress, onDelete }: DocumentCardProps) => {
+  const { colors } = useTheme()
 
-  const handleDelete = () => {
+  const extracted = document.extractedData as Partial<DocumentExtractedData> | null
+  const hasAiData = extracted?.confidence !== undefined
+  const fields = (extracted?.fields ?? {}) as Record<string, string>
+  const expiryDate = fields.expiryDate ?? fields.validUntil ?? null
+  const isExpired = expiryDate ? new Date(expiryDate) < new Date() : false
+
+  const iconName: IconName = TYPE_ICON_NAME[document.type] ?? 'documents'
+  const iconColor = TYPE_ICON_COLOR[document.type] ?? colors.text.tertiary
+
+  const handleDeleteConfirm = () => {
     Alert.alert(
       'Eliminar documento',
       `¿Eliminar "${document.title}"? Esta acción no se puede deshacer.`,
       [
         { text: 'Cancelar', style: 'cancel' },
-        {
-          text: 'Eliminar',
-          style: 'destructive',
-          onPress: () => onDelete?.(document.id),
-        },
+        { text: 'Eliminar', style: 'destructive', onPress: () => onDelete?.(document.id) },
       ]
     )
   }
 
-  const handleCorrect = () => {
-    Alert.alert('Próximamente', 'La edición manual de datos estará disponible pronto.')
-  }
+  const renderRightActions = () => (
+    <Pressable
+      onPress={handleDeleteConfirm}
+      style={[styles.deleteAction, { backgroundColor: colors.semantic.danger }]}
+      accessibilityRole="button"
+      accessibilityLabel={`Eliminar ${document.title}`}
+    >
+      <Icon name="delete" size="sm" color="#FFFFFF" />
+      <Text variant="caption" weight="semibold" color="#FFFFFF">
+        Eliminar
+      </Text>
+    </Pressable>
+  )
 
   return (
-    <View className="mb-3 rounded-xl border border-slate-700 bg-slate-800 p-4">
-      {/* Header: thumbnail/emoji + título + tipo badge + indicador offline */}
-      <View className="mb-3 flex-row items-start justify-between">
-        <View className="mr-3 flex-1 flex-row items-center gap-3">
-          {/* Miniatura del documento si hay URL, si no muestra emoji */}
-          {thumbnailUrl ? (
-            <Image
-              source={{ uri: thumbnailUrl }}
-              className="h-12 w-10 rounded-md"
-              resizeMode="cover"
-              accessibilityElementsHidden
-            />
-          ) : (
-            <Text className="text-3xl" accessibilityElementsHidden>
-              {TYPE_EMOJIS[document.type]}
+    <ReanimatedSwipeable
+      renderRightActions={onDelete ? renderRightActions : undefined}
+      friction={2}
+      rightThreshold={40}
+    >
+      <Pressable
+        onPress={onPress}
+        style={[
+          styles.card,
+          {
+            backgroundColor: colors.background.elevated,
+            borderBottomColor: colors.border,
+          },
+        ]}
+        accessibilityRole={onPress ? 'button' : 'none'}
+        accessibilityLabel={document.title}
+      >
+        {/* Icono de tipo */}
+        <View style={[styles.iconBox, { backgroundColor: `${iconColor}18` }]}>
+          <Icon name={iconName} size="md" color={iconColor} />
+        </View>
+
+        {/* Contenido central */}
+        <View style={styles.content}>
+          <Text variant="body" weight="semibold" color={colors.text.primary} numberOfLines={1}>
+            {document.title}
+          </Text>
+          <View style={styles.subtitleRow}>
+            <Text variant="caption" color={colors.text.tertiary}>
+              {TYPE_LABELS[document.type]}
             </Text>
-          )}
-          <View className="flex-1">
-            <View className="flex-row items-center gap-1.5">
-              <Text className="flex-1 text-sm font-semibold text-white" numberOfLines={1}>
-                {document.title}
+            {expiryDate ? (
+              <Text
+                variant="caption"
+                color={isExpired ? colors.semantic.danger : colors.text.tertiary}
+              >
+                {' '}·{isExpired ? ' Vencido' : ''} {expiryDate}
               </Text>
-              {/* Indicador de disponibilidad offline */}
-              {isCachedOffline ? (
-                <Text
-                  className="text-xs text-emerald-400"
-                  accessibilityLabel="Disponible sin conexión"
-                >
-                  ✓
-                </Text>
-              ) : null}
-            </View>
-            <Text className="mt-0.5 text-xs text-slate-500" numberOfLines={1}>
-              {document.fileName}
-            </Text>
+            ) : null}
+            {hasAiData ? (
+              <View style={[styles.aiBadge, { backgroundColor: `${colors.primary}18` }]}>
+                <Text style={[styles.aiBadgeText, { color: colors.primary }]}>✨ IA</Text>
+              </View>
+            ) : null}
           </View>
         </View>
-        <Badge
-          label={TYPE_LABELS[document.type]}
-          variant={TYPE_BADGE_VARIANTS[document.type]}
-        />
-      </View>
 
-      {/* Campos clave extraídos por IA */}
-      {keyFields.length > 0 ? (
-        <View className="mb-3 gap-1.5">
-          {keyFields.map(({ label, value }) => (
-            <View key={label} className="flex-row gap-2">
-              <Text className="w-28 text-xs capitalize text-slate-500">{label}</Text>
-              <Text
-                className="flex-1 text-xs font-medium text-slate-200"
-                numberOfLines={1}
-              >
-                {value}
-              </Text>
-            </View>
-          ))}
-        </View>
-      ) : null}
-
-      {/* Footer: indicador IA + confianza + acciones */}
-      <View className="flex-row items-center justify-between border-t border-slate-700 pt-3">
-        <View className="flex-row items-center gap-2">
-          {hasAiData ? (
-            <View className="flex-row items-center gap-1.5">
-              <Text className="text-xs text-indigo-400">✨ IA</Text>
-              <Badge
-                label={getConfidenceLabel(confidence)}
-                variant={getConfidenceVariant(confidence)}
-                accessibilityLabel={`Confianza de extracción: ${getConfidenceLabel(confidence)}`}
-              />
-            </View>
-          ) : null}
-        </View>
-
-        <View className="flex-row gap-4">
-          <Pressable
-            onPress={handleCorrect}
-            accessibilityRole="button"
-            accessibilityLabel="Corregir datos del documento"
-          >
-            <Text className="text-xs text-indigo-400">Corregir datos</Text>
-          </Pressable>
-          {onDelete ? (
-            <Pressable
-              onPress={handleDelete}
-              accessibilityRole="button"
-              accessibilityLabel={`Eliminar documento ${document.title}`}
-            >
-              <Text className="text-xs text-red-400">Eliminar</Text>
-            </Pressable>
-          ) : null}
-        </View>
-      </View>
-    </View>
+        {/* Chevron derecho */}
+        {onPress ? <Icon name="forward" size="sm" color={colors.text.tertiary} /> : null}
+      </Pressable>
+    </ReanimatedSwipeable>
   )
 }
+
+// ─── Estilos ──────────────────────────────────────────────────────────────────
+
+const styles = StyleSheet.create({
+  card: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    height: 72,
+    paddingHorizontal: theme.spacing.md,
+    gap: theme.spacing.sm,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  iconBox: {
+    width: 48,
+    height: 48,
+    borderRadius: theme.radius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  content: {
+    flex: 1,
+    gap: 3,
+  },
+  subtitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: theme.spacing.xs,
+  },
+  aiBadge: {
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+    borderRadius: theme.radius.sm,
+  },
+  aiBadgeText: {
+    fontSize: 10,
+    fontWeight: '600',
+  },
+  deleteAction: {
+    width: 80,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+  },
+})

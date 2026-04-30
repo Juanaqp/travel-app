@@ -1,21 +1,26 @@
 import { useState } from 'react'
-import { View, Text, TextInput, Pressable, Modal, ScrollView, Alert, ActivityIndicator } from 'react-native'
+import {
+  View,
+  TextInput,
+  Pressable,
+  Modal,
+  ScrollView,
+  Alert,
+  ActivityIndicator,
+  StyleSheet,
+  KeyboardAvoidingView,
+  Platform,
+} from 'react-native'
+import { useSafeAreaInsets } from 'react-native-safe-area-context'
+import { useTheme } from '@/hooks/useTheme'
+import { theme } from '@/constants/theme'
+import { Text } from '@/components/ui/Text'
+import { Icon } from '@/components/ui/Icon'
 import { useParseExpense } from '@/hooks/useExpenses'
 import type { CreateExpenseInput, ExpenseCategory, ParseExpenseResult } from '@travelapp/types'
 import { EXPENSE_CATEGORY_LABELS } from '@travelapp/types'
 
-// ─── Tipos ────────────────────────────────────────────────────────────────────
-
-interface ExpenseFormProps {
-  tripId: string
-  baseCurrency: string
-  initialValues?: Partial<CreateExpenseInput>
-  onSubmit: (values: CreateExpenseInput) => void
-  onCancel: () => void
-  isSubmitting?: boolean
-}
-
-// ─── Monedas frecuentes para el selector rápido ───────────────────────────────
+// ─── Monedas frecuentes ───────────────────────────────────────────────────────
 
 const QUICK_CURRENCIES = ['USD', 'EUR', 'GBP', 'JPY', 'MXN', 'BRL', 'ARS', 'PEN', 'CLP', 'COP']
 
@@ -32,26 +37,22 @@ const CATEGORY_EMOJI: Record<ExpenseCategory, string> = {
   other: '📦',
 }
 
-// ─── Badge de confianza ───────────────────────────────────────────────────────
+// ─── Props ────────────────────────────────────────────────────────────────────
 
-const ConfidenceBadge = ({ confidence }: { confidence: number }) => {
-  const pct = Math.round(confidence * 100)
-  const label = confidence >= 0.8 ? 'Alta' : confidence >= 0.5 ? 'Media' : 'Baja'
-  const colorClass =
-    confidence >= 0.8 ? 'bg-emerald-800' : confidence >= 0.5 ? 'bg-yellow-800' : 'bg-red-900'
-
-  return (
-    <View className={`self-start rounded-full px-2 py-0.5 ${colorClass}`}>
-      <Text className="text-xs font-medium text-white">
-        ✨ IA · {label} {pct}%
-      </Text>
-    </View>
-  )
+interface ExpenseFormProps {
+  visible: boolean
+  tripId: string
+  baseCurrency: string
+  initialValues?: Partial<CreateExpenseInput>
+  onSubmit: (values: CreateExpenseInput) => void
+  onCancel: () => void
+  isSubmitting?: boolean
 }
 
-// ─── Formulario principal ─────────────────────────────────────────────────────
+// ─── ExpenseForm ──────────────────────────────────────────────────────────────
 
 export const ExpenseForm = ({
+  visible,
   tripId,
   baseCurrency,
   initialValues,
@@ -59,6 +60,8 @@ export const ExpenseForm = ({
   onCancel,
   isSubmitting = false,
 }: ExpenseFormProps) => {
+  const { colors } = useTheme()
+  const insets = useSafeAreaInsets()
   const parseExpenseMutation = useParseExpense()
 
   // Estado del formulario
@@ -80,6 +83,7 @@ export const ExpenseForm = ({
   const [showAiModal, setShowAiModal] = useState(false)
   const [aiInputText, setAiInputText] = useState('')
   const [lastParseResult, setLastParseResult] = useState<ParseExpenseResult | null>(null)
+  const [showDetails, setShowDetails] = useState(false)
 
   // ─── Parseo con IA ────────────────────────────────────────────────────────
 
@@ -96,7 +100,6 @@ export const ExpenseForm = ({
 
       setLastParseResult(result)
 
-      // Autocompletar campos con los datos extraídos
       if (result.fields.title) setDescription(result.fields.title)
       if (result.fields.amount != null) setAmountText(String(result.fields.amount))
       if (result.fields.currency) setCurrency(result.fields.currency)
@@ -104,6 +107,7 @@ export const ExpenseForm = ({
       if (result.fields.date) setSpentAt(result.fields.date)
 
       setShowAiModal(false)
+      setAiInputText('')
     } catch {
       Alert.alert('Error de IA', 'No se pudo analizar el texto. Inténtalo de nuevo.')
     }
@@ -135,255 +139,428 @@ export const ExpenseForm = ({
     })
   }
 
+  const confidenceColor =
+    (lastParseResult?.confidence ?? 0) >= 0.8
+      ? colors.semantic.success
+      : (lastParseResult?.confidence ?? 0) >= 0.5
+      ? colors.semantic.warning
+      : colors.semantic.danger
+
   // ─── Render ───────────────────────────────────────────────────────────────
 
   return (
-    <View className="flex-1 bg-slate-900">
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: 32 }}
-        keyboardShouldPersistTaps="handled"
+    <Modal
+      visible={visible}
+      animationType="slide"
+      presentationStyle="pageSheet"
+      onRequestClose={onCancel}
+    >
+      <KeyboardAvoidingView
+        style={[styles.flex, { backgroundColor: colors.background.base }]}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
-        {/* Botón de IA */}
-        <View className="mx-4 mb-4 mt-2">
+        {/* Handle bar */}
+        <View style={styles.handleRow}>
+          <View style={[styles.handle, { backgroundColor: colors.border }]} />
+        </View>
+
+        {/* Header */}
+        <View style={[styles.header, { borderBottomColor: colors.border }]}>
+          <Text variant="title" weight="bold" color={colors.text.primary}>
+            Nuevo gasto
+          </Text>
+          <Pressable
+            onPress={onCancel}
+            accessibilityRole="button"
+            accessibilityLabel="Cerrar formulario"
+            style={styles.closeBtn}
+          >
+            <Icon name="close" size="md" color={colors.text.tertiary} />
+          </Pressable>
+        </View>
+
+        <ScrollView
+          style={styles.flex}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 24 }]}
+          keyboardShouldPersistTaps="handled"
+        >
+          {/* ─── Botón de parseo con IA ──────────────────────────────── */}
           <Pressable
             onPress={() => setShowAiModal(true)}
             accessibilityRole="button"
-            accessibilityLabel="Describir gasto con texto o voz"
-            className="flex-row items-center justify-center gap-2 rounded-xl border border-indigo-500 bg-indigo-950 px-4 py-3"
+            accessibilityLabel="Describir gasto con IA"
+            style={[
+              styles.aiParseBtn,
+              { backgroundColor: `${colors.primary}12`, borderColor: `${colors.primary}40` },
+            ]}
           >
-            <Text className="text-lg">✨</Text>
-            <Text className="text-sm font-semibold text-indigo-300">
-              Describir con texto o voz
-            </Text>
+            <Text style={styles.aiSparkle}>✨</Text>
+            <View style={styles.aiParseBtnText}>
+              <Text variant="body" weight="semibold" color={colors.primary}>
+                Describir con texto libre
+              </Text>
+              <Text variant="caption" color={colors.text.tertiary}>
+                La IA completa el formulario
+              </Text>
+            </View>
           </Pressable>
 
+          {/* Resultado del último parseo */}
           {lastParseResult ? (
-            <View className="mt-2">
-              <ConfidenceBadge confidence={lastParseResult.confidence} />
-              <Text className="mt-1 text-xs text-slate-500" numberOfLines={1}>
+            <View style={[styles.parseResultRow, { borderColor: colors.border }]}>
+              <View style={[styles.confidencePill, { backgroundColor: `${confidenceColor}20` }]}>
+                <Text variant="caption" weight="semibold" style={{ color: confidenceColor }}>
+                  ✨ IA · {Math.round(lastParseResult.confidence * 100)}%
+                </Text>
+              </View>
+              <Text variant="caption" color={colors.text.tertiary} numberOfLines={1} style={styles.flex}>
                 "{lastParseResult.raw_text}"
               </Text>
             </View>
           ) : null}
-        </View>
 
-        {/* Separador */}
-        <View className="mx-4 mb-4 flex-row items-center gap-3">
-          <View className="h-px flex-1 bg-slate-700" />
-          <Text className="text-xs text-slate-600">o ingresa manualmente</Text>
-          <View className="h-px flex-1 bg-slate-700" />
-        </View>
-
-        {/* Descripción */}
-        <View className="mx-4 mb-4">
-          <Text className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-slate-500">
-            Descripción *
-          </Text>
-          <TextInput
-            value={description}
-            onChangeText={setDescription}
-            placeholder="Ej: Cena en restaurante"
-            placeholderTextColor="#475569"
-            className="rounded-xl border border-slate-700 bg-slate-800 px-4 py-3 text-white"
-            maxLength={120}
-            returnKeyType="next"
-          />
-        </View>
-
-        {/* Monto + Moneda */}
-        <View className="mx-4 mb-4 flex-row gap-3">
-          <View className="flex-1">
-            <Text className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-slate-500">
-              Monto *
+          {/* Divisor */}
+          <View style={styles.dividerRow}>
+            <View style={[styles.dividerLine, { backgroundColor: colors.border }]} />
+            <Text variant="caption" color={colors.text.tertiary}>
+              o ingresa manualmente
             </Text>
+            <View style={[styles.dividerLine, { backgroundColor: colors.border }]} />
+          </View>
+
+          {/* ─── Monto + moneda ─────────────────────────────────────── */}
+          <View style={styles.amountRow}>
             <TextInput
               value={amountText}
               onChangeText={setAmountText}
               placeholder="0.00"
-              placeholderTextColor="#475569"
+              placeholderTextColor={colors.text.tertiary}
               keyboardType="decimal-pad"
-              className="rounded-xl border border-slate-700 bg-slate-800 px-4 py-3 text-white"
+              style={[
+                styles.amountInput,
+                {
+                  color: amountText ? colors.text.primary : colors.text.tertiary,
+                  fontSize: theme.typography.size.xxxl,
+                },
+              ]}
             />
-          </View>
-
-          <View className="w-24">
-            <Text className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-slate-500">
-              Moneda
-            </Text>
             <Pressable
               onPress={() => setShowCurrencyPicker(true)}
               accessibilityRole="button"
-              accessibilityLabel={`Moneda seleccionada: ${currency}`}
-              className="items-center justify-center rounded-xl border border-slate-700 bg-slate-800 py-3"
+              accessibilityLabel={`Moneda: ${currency}`}
+              style={[
+                styles.currencyPill,
+                { backgroundColor: colors.background.surface, borderColor: colors.border },
+              ]}
             >
-              <Text className="font-semibold text-white">{currency}</Text>
+              <Text variant="body" weight="semibold" color={colors.primary}>
+                {currency}
+              </Text>
             </Pressable>
           </View>
-        </View>
 
-        {/* Categoría */}
-        <View className="mx-4 mb-4">
-          <Text className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-500">
-            Categoría
+          {/* ─── Categorías ─────────────────────────────────────────── */}
+          <Text
+            variant="caption"
+            weight="semibold"
+            color={colors.text.tertiary}
+            style={styles.sectionLabel}
+          >
+            CATEGORÍA
           </Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            <View className="flex-row gap-2">
-              {(Object.keys(EXPENSE_CATEGORY_LABELS) as ExpenseCategory[]).map((cat) => (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.categoryScroll}
+          >
+            {(Object.keys(EXPENSE_CATEGORY_LABELS) as ExpenseCategory[]).map((cat) => {
+              const isActive = category === cat
+              return (
                 <Pressable
                   key={cat}
                   onPress={() => setCategory(cat)}
                   accessibilityRole="button"
                   accessibilityLabel={`Categoría ${EXPENSE_CATEGORY_LABELS[cat]}`}
-                  accessibilityState={{ selected: category === cat }}
-                  className={`flex-row items-center gap-1.5 rounded-full px-3 py-1.5 ${
-                    category === cat
-                      ? 'bg-indigo-600'
-                      : 'border border-slate-700 bg-slate-800'
-                  }`}
+                  accessibilityState={{ selected: isActive }}
+                  style={[
+                    styles.categoryPill,
+                    isActive
+                      ? { backgroundColor: colors.primary, borderColor: 'transparent' }
+                      : { backgroundColor: colors.background.surface, borderColor: colors.border },
+                  ]}
                 >
-                  <Text className="text-sm">{CATEGORY_EMOJI[cat]}</Text>
+                  <Text style={styles.categoryEmoji}>{CATEGORY_EMOJI[cat]}</Text>
                   <Text
-                    className={`text-xs font-medium ${
-                      category === cat ? 'text-white' : 'text-slate-400'
-                    }`}
+                    variant="caption"
+                    weight="semibold"
+                    color={isActive ? '#FFFFFF' : colors.text.secondary}
                   >
                     {EXPENSE_CATEGORY_LABELS[cat]}
                   </Text>
                 </Pressable>
-              ))}
-            </View>
+              )
+            })}
           </ScrollView>
-        </View>
 
-        {/* Fecha */}
-        <View className="mx-4 mb-4">
-          <Text className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-slate-500">
-            Fecha
+          {/* ─── Descripción (siempre visible, requerida) ─────────── */}
+          <Text
+            variant="caption"
+            weight="semibold"
+            color={colors.text.tertiary}
+            style={styles.sectionLabel}
+          >
+            DESCRIPCIÓN *
           </Text>
           <TextInput
-            value={spentAt}
-            onChangeText={setSpentAt}
-            placeholder="YYYY-MM-DD"
-            placeholderTextColor="#475569"
-            className="rounded-xl border border-slate-700 bg-slate-800 px-4 py-3 text-white"
-            maxLength={10}
+            value={description}
+            onChangeText={setDescription}
+            placeholder="Ej: Cena en restaurante"
+            placeholderTextColor={colors.text.tertiary}
+            style={[
+              styles.textField,
+              {
+                backgroundColor: colors.background.surface,
+                borderColor: colors.border,
+                color: colors.text.primary,
+              },
+            ]}
+            maxLength={120}
+            returnKeyType="next"
           />
-        </View>
 
-        {/* Notas */}
-        <View className="mx-4 mb-6">
-          <Text className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-slate-500">
-            Notas (opcional)
-          </Text>
-          <TextInput
-            value={notes}
-            onChangeText={setNotes}
-            placeholder="Información adicional"
-            placeholderTextColor="#475569"
-            multiline
-            numberOfLines={2}
-            className="rounded-xl border border-slate-700 bg-slate-800 px-4 py-3 text-white"
-            maxLength={300}
-          />
-        </View>
-
-        {/* Botones de acción */}
-        <View className="mx-4 flex-row gap-3">
+          {/* ─── Más detalles colapsable (fecha + notas) ─────────── */}
           <Pressable
-            onPress={onCancel}
-            disabled={isSubmitting}
+            onPress={() => setShowDetails((v) => !v)}
             accessibilityRole="button"
-            accessibilityLabel="Cancelar"
-            className="flex-1 rounded-xl border border-slate-700 py-3 active:bg-slate-800 disabled:opacity-50"
+            accessibilityLabel={showDetails ? 'Ocultar detalles' : 'Más detalles'}
+            style={[styles.detailsToggle, { borderColor: colors.border }]}
           >
-            <Text className="text-center font-semibold text-slate-400">Cancelar</Text>
+            <Text variant="caption" weight="semibold" color={colors.text.secondary}>
+              {showDetails ? '▲ Menos detalles' : '▼ Más detalles'}
+            </Text>
           </Pressable>
 
-          <Pressable
-            onPress={handleSubmit}
-            disabled={isSubmitting}
-            accessibilityRole="button"
-            accessibilityLabel="Guardar gasto"
-            className="flex-1 rounded-xl bg-indigo-600 py-3 active:bg-indigo-700 disabled:opacity-50"
-          >
-            {isSubmitting ? (
-              <ActivityIndicator size="small" color="white" />
-            ) : (
-              <Text className="text-center font-semibold text-white">Guardar</Text>
-            )}
-          </Pressable>
-        </View>
-      </ScrollView>
+          {showDetails ? (
+            <View style={styles.detailsSection}>
+              {/* Fecha */}
+              <Text
+                variant="caption"
+                weight="semibold"
+                color={colors.text.tertiary}
+                style={styles.fieldLabel}
+              >
+                FECHA
+              </Text>
+              <TextInput
+                value={spentAt}
+                onChangeText={setSpentAt}
+                placeholder="YYYY-MM-DD"
+                placeholderTextColor={colors.text.tertiary}
+                style={[
+                  styles.textField,
+                  {
+                    backgroundColor: colors.background.surface,
+                    borderColor: colors.border,
+                    color: colors.text.primary,
+                  },
+                ]}
+                maxLength={10}
+              />
 
-      {/* Modal de IA — texto libre o voz */}
+              {/* Notas */}
+              <Text
+                variant="caption"
+                weight="semibold"
+                color={colors.text.tertiary}
+                style={styles.fieldLabel}
+              >
+                NOTAS (OPCIONAL)
+              </Text>
+              <TextInput
+                value={notes}
+                onChangeText={setNotes}
+                placeholder="Información adicional"
+                placeholderTextColor={colors.text.tertiary}
+                multiline
+                numberOfLines={3}
+                style={[
+                  styles.textArea,
+                  {
+                    backgroundColor: colors.background.surface,
+                    borderColor: colors.border,
+                    color: colors.text.primary,
+                  },
+                ]}
+                maxLength={300}
+              />
+            </View>
+          ) : null}
+
+          {/* ─── Botones de acción ───────────────────────────────── */}
+          <View style={[styles.actionsRow, { marginTop: theme.spacing.lg }]}>
+            <Pressable
+              onPress={onCancel}
+              disabled={isSubmitting}
+              accessibilityRole="button"
+              accessibilityLabel="Cancelar"
+              style={[
+                styles.actionBtn,
+                { backgroundColor: colors.background.surface, borderColor: colors.border },
+              ]}
+            >
+              <Text variant="body" weight="semibold" color={colors.text.secondary}>
+                Cancelar
+              </Text>
+            </Pressable>
+
+            <Pressable
+              onPress={handleSubmit}
+              disabled={isSubmitting}
+              accessibilityRole="button"
+              accessibilityLabel="Guardar gasto"
+              style={[
+                styles.actionBtnPrimary,
+                { backgroundColor: colors.primary, opacity: isSubmitting ? 0.6 : 1 },
+              ]}
+            >
+              {isSubmitting ? (
+                <ActivityIndicator size="small" color="#FFFFFF" />
+              ) : (
+                <Text variant="body" weight="semibold" color="#FFFFFF">
+                  Guardar
+                </Text>
+              )}
+            </Pressable>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
+
+      {/* ─── Modal de IA ─────────────────────────────────────────────────── */}
       <Modal
         visible={showAiModal}
         animationType="slide"
         presentationStyle="pageSheet"
         onRequestClose={() => setShowAiModal(false)}
       >
-        <View className="flex-1 bg-slate-900 px-4 pt-6">
-          <Text className="mb-1 text-xl font-bold text-white">Describir gasto</Text>
-          <Text className="mb-6 text-sm text-slate-400">
+        <View
+          style={[
+            styles.innerModal,
+            { backgroundColor: colors.background.base },
+          ]}
+        >
+          <Text
+            variant="title"
+            weight="bold"
+            color={colors.text.primary}
+            style={{ marginBottom: 4 }}
+          >
+            Describir gasto
+          </Text>
+          <Text
+            variant="body"
+            color={colors.text.secondary}
+            style={{ marginBottom: theme.spacing.lg }}
+          >
             Describe el gasto en lenguaje natural. La IA extraerá los datos automáticamente.
           </Text>
 
-          <Text className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-slate-500">
-            Descripción libre
+          <Text
+            variant="caption"
+            weight="semibold"
+            color={colors.text.tertiary}
+            style={styles.fieldLabel}
+          >
+            DESCRIPCIÓN LIBRE
           </Text>
           <TextInput
             value={aiInputText}
             onChangeText={setAiInputText}
             placeholder="Ej: gasté 40 euros en cena en Roma ayer"
-            placeholderTextColor="#475569"
+            placeholderTextColor={colors.text.tertiary}
             multiline
-            numberOfLines={3}
-            className="mb-2 rounded-xl border border-slate-700 bg-slate-800 px-4 py-3 text-white"
+            numberOfLines={4}
+            style={[
+              styles.textArea,
+              {
+                backgroundColor: colors.background.surface,
+                borderColor: colors.border,
+                color: colors.text.primary,
+                marginBottom: theme.spacing.sm,
+              },
+            ]}
             autoFocus
             maxLength={500}
           />
 
-          {/* Nota sobre voz — se activa cuando expo-speech-recognition esté disponible */}
-          <Text className="mb-6 text-xs text-slate-600">
+          <Text
+            variant="caption"
+            color={colors.text.tertiary}
+            style={{ marginBottom: theme.spacing.lg }}
+          >
             🎙 Para entrada por voz, instala expo-speech-recognition en una versión futura.
           </Text>
 
-          <View className="flex-row gap-3">
+          <View style={styles.actionsRow}>
             <Pressable
               onPress={() => {
                 setShowAiModal(false)
                 setAiInputText('')
               }}
-              className="flex-1 rounded-xl border border-slate-700 py-3"
+              style={[
+                styles.actionBtn,
+                { backgroundColor: colors.background.surface, borderColor: colors.border },
+              ]}
             >
-              <Text className="text-center font-semibold text-slate-400">Cancelar</Text>
+              <Text variant="body" weight="semibold" color={colors.text.secondary}>
+                Cancelar
+              </Text>
             </Pressable>
 
             <Pressable
               onPress={handleAiParse}
               disabled={!aiInputText.trim() || parseExpenseMutation.isPending}
-              className="flex-1 rounded-xl bg-indigo-600 py-3 active:bg-indigo-700 disabled:opacity-50"
+              style={[
+                styles.actionBtnPrimary,
+                {
+                  backgroundColor: colors.primary,
+                  opacity: !aiInputText.trim() || parseExpenseMutation.isPending ? 0.5 : 1,
+                },
+              ]}
             >
               {parseExpenseMutation.isPending ? (
-                <ActivityIndicator size="small" color="white" />
+                <ActivityIndicator size="small" color="#FFFFFF" />
               ) : (
-                <Text className="text-center font-semibold text-white">✨ Analizar</Text>
+                <Text variant="body" weight="semibold" color="#FFFFFF">
+                  ✨ Analizar
+                </Text>
               )}
             </Pressable>
           </View>
         </View>
       </Modal>
 
-      {/* Modal selector de moneda */}
+      {/* ─── Modal selector de moneda ────────────────────────────────────── */}
       <Modal
         visible={showCurrencyPicker}
         animationType="slide"
         presentationStyle="pageSheet"
         onRequestClose={() => setShowCurrencyPicker(false)}
       >
-        <View className="flex-1 bg-slate-900 px-4 pt-6">
-          <Text className="mb-4 text-xl font-bold text-white">Seleccionar moneda</Text>
+        <View
+          style={[
+            styles.innerModal,
+            { backgroundColor: colors.background.base },
+          ]}
+        >
+          <Text
+            variant="title"
+            weight="bold"
+            color={colors.text.primary}
+            style={{ marginBottom: theme.spacing.md }}
+          >
+            Seleccionar moneda
+          </Text>
 
           {QUICK_CURRENCIES.map((code) => (
             <Pressable
@@ -394,11 +571,18 @@ export const ExpenseForm = ({
               }}
               accessibilityRole="button"
               accessibilityLabel={`Seleccionar ${code}`}
-              className={`mb-2 rounded-xl px-4 py-3 ${
-                currency === code ? 'bg-indigo-600' : 'border border-slate-700 bg-slate-800'
-              }`}
+              style={[
+                styles.currencyOption,
+                currency === code
+                  ? { backgroundColor: colors.primary, borderColor: 'transparent' }
+                  : { backgroundColor: colors.background.surface, borderColor: colors.border },
+              ]}
             >
-              <Text className={`font-medium ${currency === code ? 'text-white' : 'text-slate-300'}`}>
+              <Text
+                variant="body"
+                weight="medium"
+                color={currency === code ? '#FFFFFF' : colors.text.primary}
+              >
                 {code}
               </Text>
             </Pressable>
@@ -406,12 +590,198 @@ export const ExpenseForm = ({
 
           <Pressable
             onPress={() => setShowCurrencyPicker(false)}
-            className="mt-2 rounded-xl border border-slate-700 py-3"
+            style={[
+              styles.currencyOption,
+              {
+                backgroundColor: colors.background.surface,
+                borderColor: colors.border,
+                marginTop: theme.spacing.xs,
+              },
+            ]}
           >
-            <Text className="text-center font-semibold text-slate-400">Cancelar</Text>
+            <Text
+              variant="body"
+              weight="semibold"
+              color={colors.text.secondary}
+              style={{ textAlign: 'center' }}
+            >
+              Cancelar
+            </Text>
           </Pressable>
         </View>
       </Modal>
-    </View>
+    </Modal>
   )
 }
+
+// ─── Estilos ──────────────────────────────────────────────────────────────────
+
+const styles = StyleSheet.create({
+  flex: {
+    flex: 1,
+  },
+  handleRow: {
+    alignItems: 'center',
+    paddingTop: theme.spacing.sm,
+    paddingBottom: theme.spacing.xs,
+  },
+  handle: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: theme.spacing.md,
+    paddingBottom: theme.spacing.sm,
+    borderBottomWidth: 1,
+  },
+  closeBtn: {
+    padding: theme.spacing.xs,
+  },
+  scrollContent: {
+    padding: theme.spacing.md,
+  },
+  aiParseBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.sm,
+    borderWidth: 1,
+    borderRadius: theme.radius.lg,
+    padding: theme.spacing.md,
+  },
+  aiSparkle: {
+    fontSize: 22,
+  },
+  aiParseBtnText: {
+    gap: 2,
+  },
+  parseResultRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.sm,
+    marginTop: theme.spacing.sm,
+    borderTopWidth: 1,
+    paddingTop: theme.spacing.sm,
+  },
+  confidencePill: {
+    paddingHorizontal: theme.spacing.sm,
+    paddingVertical: 3,
+    borderRadius: theme.radius.full,
+    flexShrink: 0,
+  },
+  dividerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.sm,
+    marginVertical: theme.spacing.md,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+  },
+  amountRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: theme.spacing.sm,
+    marginBottom: theme.spacing.lg,
+  },
+  amountInput: {
+    fontWeight: '700',
+    textAlign: 'center',
+    minWidth: 120,
+  },
+  currencyPill: {
+    paddingHorizontal: theme.spacing.sm,
+    paddingVertical: theme.spacing.xs,
+    borderRadius: theme.radius.full,
+    borderWidth: 1,
+  },
+  sectionLabel: {
+    letterSpacing: 0.5,
+    marginBottom: theme.spacing.sm,
+  },
+  categoryScroll: {
+    gap: theme.spacing.sm,
+    paddingBottom: theme.spacing.md,
+  },
+  categoryPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.xs,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: theme.radius.full,
+    borderWidth: 1,
+  },
+  categoryEmoji: {
+    fontSize: 15,
+  },
+  textField: {
+    borderWidth: 1,
+    borderRadius: theme.radius.md,
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: 12,
+    fontSize: theme.typography.size.base,
+  },
+  textArea: {
+    borderWidth: 1,
+    borderRadius: theme.radius.md,
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: 12,
+    fontSize: theme.typography.size.base,
+    minHeight: 80,
+    textAlignVertical: 'top',
+  },
+  detailsToggle: {
+    alignItems: 'center',
+    paddingVertical: theme.spacing.sm,
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+    marginTop: theme.spacing.xs,
+    marginBottom: theme.spacing.sm,
+  },
+  detailsSection: {
+    gap: theme.spacing.xs,
+    marginBottom: theme.spacing.sm,
+  },
+  fieldLabel: {
+    letterSpacing: 0.5,
+    marginBottom: theme.spacing.xs,
+    marginTop: theme.spacing.sm,
+  },
+  actionsRow: {
+    flexDirection: 'row',
+    gap: theme.spacing.sm,
+  },
+  actionBtn: {
+    flex: 1,
+    height: 50,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: theme.radius.lg,
+    borderWidth: 1,
+  },
+  actionBtnPrimary: {
+    flex: 2,
+    height: 50,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: theme.radius.lg,
+  },
+  innerModal: {
+    flex: 1,
+    padding: theme.spacing.md,
+    paddingTop: theme.spacing.lg,
+  },
+  currencyOption: {
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: 12,
+    borderRadius: theme.radius.md,
+    borderWidth: 1,
+    marginBottom: theme.spacing.sm,
+  },
+})

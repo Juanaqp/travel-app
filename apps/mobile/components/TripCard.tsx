@@ -1,14 +1,18 @@
-import { View, Text, Pressable, Image } from 'react-native'
-import type { Trip, TripStatus } from '@travelapp/types'
-import { Badge } from './Badge'
+// Tarjeta de viaje del sistema Roamly
+// Soporta variante completa (lista) y compacta (widgets)
 
-interface TripCardProps {
-  trip: Trip
-  onPress: (trip: Trip) => void
-}
+import { useRef, useState } from 'react'
+import { Image, Pressable, View, StyleSheet, Animated } from 'react-native'
+import { useTheme } from '@/hooks/useTheme'
+import { theme } from '@/constants/theme'
+import { Text } from '@/components/ui/Text'
+import { Icon } from '@/components/ui/Icon'
+import { Skeleton } from '@/components/ui/Skeleton'
+import type { Trip, TripStatus, BudgetTier } from '@travelapp/types'
 
-// Etiquetas visibles del estado del viaje
-const STATUS_LABELS: Record<TripStatus, string> = {
+// ─── Etiquetas de estado ──────────────────────────────────────────────────────
+
+const STATUS_LABEL: Record<TripStatus, string> = {
   planning: 'Planificando',
   confirmed: 'Confirmado',
   active: 'En curso',
@@ -16,17 +20,23 @@ const STATUS_LABELS: Record<TripStatus, string> = {
   cancelled: 'Cancelado',
 }
 
-// Variante de color del Badge por estado
-const STATUS_BADGE_VARIANTS: Record<
-  TripStatus,
-  'default' | 'success' | 'warning' | 'danger' | 'info'
-> = {
-  planning: 'default',
-  confirmed: 'info',
-  active: 'success',
-  completed: 'default',
-  cancelled: 'danger',
+// Color de texto del pill de estado — siempre sobre fondo blanco semitransparente
+const STATUS_TEXT_COLOR: Record<TripStatus, string> = {
+  planning: '#007AFF',
+  confirmed: '#007AFF',
+  active: '#00A699',
+  completed: '#636366',
+  cancelled: '#FF5A5F',
 }
+
+const BUDGET_LABEL: Record<BudgetTier, string> = {
+  budget: 'Económico',
+  mid: 'Estándar',
+  premium: 'Premium',
+  luxury: 'Lujo',
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 // Formatea 'YYYY-MM-DD' como '12 abr 2026' sin librerías externas
 const formatShortDate = (dateStr: string): string => {
@@ -64,71 +74,282 @@ const buildDaysLabel = (trip: Trip): string => {
   return ''
 }
 
-export const TripCard = ({ trip, onPress }: TripCardProps) => {
-  const primaryDestination = trip.destinations[0]
+// ─── Props ────────────────────────────────────────────────────────────────────
+
+export interface TripCardProps {
+  trip: Trip
+  onPress: () => void
+  variant?: 'full' | 'compact'
+}
+
+// ─── Variante completa ────────────────────────────────────────────────────────
+
+const FULL_HEIGHT = 220
+const COMPACT_WIDTH = 160
+const COMPACT_HEIGHT = 120
+
+export const TripCard = ({ trip, onPress, variant = 'full' }: TripCardProps) => {
+  const { colors, isDark } = useTheme()
+  const scaleAnim = useRef(new Animated.Value(1)).current
+  const [imageLoaded, setImageLoaded] = useState(false)
+  const primaryDest = trip.destinations[0]
   const daysLabel = buildDaysLabel(trip)
+  const statusColor = STATUS_TEXT_COLOR[trip.status]
+
+  const handlePressIn = () => {
+    Animated.timing(scaleAnim, {
+      toValue: 0.98,
+      duration: theme.animation.fast,
+      useNativeDriver: true,
+    }).start()
+  }
+
+  const handlePressOut = () => {
+    Animated.timing(scaleAnim, {
+      toValue: 1,
+      duration: theme.animation.fast,
+      useNativeDriver: true,
+    }).start()
+  }
+
+  const cardHeight = variant === 'full' ? FULL_HEIGHT : COMPACT_HEIGHT
+  const cardStyle = [
+    styles.card,
+    variant === 'compact' && { width: COMPACT_WIDTH },
+    { borderColor: isDark ? colors.border : 'transparent', borderWidth: isDark ? StyleSheet.hairlineWidth : 0 },
+    ...(isDark ? [] : [theme.shadows.md]),
+  ]
 
   return (
     <Pressable
-      onPress={() => onPress(trip)}
+      onPress={onPress}
+      onPressIn={handlePressIn}
+      onPressOut={handlePressOut}
       accessibilityRole="button"
-      accessibilityLabel={`Viaje a ${primaryDestination?.city ?? trip.title}, estado: ${STATUS_LABELS[trip.status]}`}
-      className="mb-4 overflow-hidden rounded-2xl bg-slate-800 active:opacity-75"
+      accessibilityLabel={`Viaje a ${primaryDest?.city ?? trip.title}, estado: ${STATUS_LABEL[trip.status]}`}
     >
-      {/* Imagen de portada — placeholder si no hay URL */}
-      <View className="relative h-44 bg-slate-700">
-        {trip.coverImageUrl ? (
-          <Image
-            source={{ uri: trip.coverImageUrl }}
-            style={{ width: '100%', height: '100%' }}
-            resizeMode="cover"
-            accessibilityLabel={`Foto de portada de ${trip.title}`}
-          />
-        ) : (
-          <View className="h-full w-full items-center justify-center bg-indigo-950">
-            <Text className="text-6xl" accessibilityElementsHidden>
-              ✈️
-            </Text>
-          </View>
-        )}
-
-        {/* Badge de estado flotante sobre la imagen */}
-        <View className="absolute right-3 top-3">
-          <Badge
-            label={STATUS_LABELS[trip.status]}
-            variant={STATUS_BADGE_VARIANTS[trip.status]}
-          />
-        </View>
-      </View>
-
-      {/* Contenido de texto */}
-      <View className="p-4">
-        <Text className="text-lg font-bold text-white" numberOfLines={1}>
-          {trip.title}
-        </Text>
-
-        {primaryDestination ? (
-          <Text className="mt-0.5 text-sm text-slate-400">
-            {primaryDestination.city}, {primaryDestination.country}
-          </Text>
-        ) : null}
-
-        {/* Fechas y leyenda de días */}
-        <View className="mt-2 flex-row items-center justify-between">
-          {trip.startDate ? (
-            <Text className="text-xs text-slate-500">
-              {formatShortDate(trip.startDate)}
-              {trip.endDate ? ` → ${formatShortDate(trip.endDate)}` : ''}
-            </Text>
-          ) : (
-            <Text className="text-xs text-slate-600">Sin fechas definidas</Text>
+      <Animated.View style={[cardStyle, { transform: [{ scale: scaleAnim }] }]}>
+        {/* Imagen de portada + gradiente */}
+        <View style={[styles.imageContainer, { height: cardHeight }]}>
+          {/* Skeleton mientras carga */}
+          {!imageLoaded && (
+            <Skeleton width="100%" height={cardHeight} radius="lg" style={styles.absoluteFill} />
           )}
 
-          {daysLabel ? (
-            <Text className="text-xs font-semibold text-indigo-400">{daysLabel}</Text>
-          ) : null}
+          {trip.coverImageUrl ? (
+            <Image
+              source={{ uri: trip.coverImageUrl }}
+              style={styles.absoluteFill}
+              resizeMode="cover"
+              onLoad={() => setImageLoaded(true)}
+              accessibilityLabel={`Foto de portada de ${trip.title}`}
+            />
+          ) : (
+            // Fondo de gradiente visual cuando no hay imagen
+            <View style={[styles.absoluteFill, styles.placeholderBg]}>
+              <View style={styles.placeholderIcon}>
+                <Icon name="flight" size="xl" color="rgba(255,255,255,0.4)" />
+              </View>
+            </View>
+          )}
+
+          {/* Gradiente simulado: espaciador + bandas oscuras al bottom */}
+          <View style={[styles.absoluteFill, styles.gradientContainer]}>
+            <View style={{ flex: 1 }} />
+            <View style={{ height: 20, backgroundColor: 'rgba(0,0,0,0.08)' }} />
+            <View style={{ height: 25, backgroundColor: 'rgba(0,0,0,0.22)' }} />
+            <View style={{ height: 30, backgroundColor: 'rgba(0,0,0,0.40)' }} />
+            <View style={{ height: variant === 'full' ? 70 : 45, backgroundColor: 'rgba(0,0,0,0.60)' }} />
+          </View>
+
+          {/* Pill de estado — top-left */}
+          <View style={[styles.statusPill, { backgroundColor: 'rgba(255,255,255,0.92)' }]}>
+            <Text style={[styles.statusText, { color: statusColor }]}>
+              {STATUS_LABEL[trip.status]}
+            </Text>
+          </View>
+
+          {/* Contenido inferior — solo en variante full */}
+          {variant === 'full' && (
+            <View style={styles.bottomContent}>
+              {/* Nombre del viaje */}
+              <Text
+                variant="subheading"
+                weight="bold"
+                color="#FFFFFF"
+                numberOfLines={1}
+              >
+                {trip.title}
+              </Text>
+
+              {/* Destino + fechas */}
+              <View style={styles.metaRow}>
+                {primaryDest && (
+                  <View style={styles.metaItem}>
+                    <Icon name="attraction" size="sm" color="rgba(255,255,255,0.85)" />
+                    <Text
+                      variant="caption"
+                      color="rgba(255,255,255,0.85)"
+                      numberOfLines={1}
+                      style={styles.metaText}
+                    >
+                      {primaryDest.city}, {primaryDest.country}
+                    </Text>
+                  </View>
+                )}
+                {trip.startDate && (
+                  <View style={styles.metaItem}>
+                    <Icon name="calendar" size="sm" color="rgba(255,255,255,0.85)" />
+                    <Text
+                      variant="caption"
+                      color="rgba(255,255,255,0.85)"
+                      numberOfLines={1}
+                      style={styles.metaText}
+                    >
+                      {formatShortDate(trip.startDate)}
+                      {trip.endDate ? ` → ${formatShortDate(trip.endDate)}` : ''}
+                    </Text>
+                  </View>
+                )}
+              </View>
+
+              {/* Budget pill + días restantes */}
+              <View style={styles.footerRow}>
+                {trip.budget && (
+                  <View style={styles.budgetPill}>
+                    <Text variant="caption" weight="semibold" color="#FFFFFF" style={styles.pillText}>
+                      {BUDGET_LABEL[trip.budget]}
+                    </Text>
+                  </View>
+                )}
+                {daysLabel ? (
+                  <Text
+                    variant="caption"
+                    weight="semibold"
+                    color="#FFFFFF"
+                    style={styles.daysLabel}
+                  >
+                    {daysLabel}
+                  </Text>
+                ) : null}
+              </View>
+            </View>
+          )}
+
+          {/* Contenido inferior — variante compact: solo nombre y destino */}
+          {variant === 'compact' && (
+            <View style={styles.compactContent}>
+              <Text
+                variant="label"
+                weight="bold"
+                color="#FFFFFF"
+                numberOfLines={1}
+              >
+                {trip.title}
+              </Text>
+              {primaryDest && (
+                <Text
+                  variant="caption"
+                  color="rgba(255,255,255,0.8)"
+                  numberOfLines={1}
+                >
+                  {primaryDest.city}
+                </Text>
+              )}
+            </View>
+          )}
         </View>
-      </View>
+      </Animated.View>
     </Pressable>
   )
 }
+
+// ─── Estilos ──────────────────────────────────────────────────────────────────
+
+const styles = StyleSheet.create({
+  card: {
+    borderRadius: theme.radius.xl,
+    overflow: 'hidden',
+  },
+  imageContainer: {
+    width: '100%',
+    backgroundColor: '#2C2C2E',
+  },
+  absoluteFill: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+  },
+  placeholderBg: {
+    backgroundColor: '#3D2B6B',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  placeholderIcon: {
+    opacity: 0.5,
+  },
+  gradientContainer: {
+    flexDirection: 'column',
+  },
+  statusPill: {
+    position: 'absolute',
+    top: theme.spacing.md,
+    left: theme.spacing.md,
+    paddingHorizontal: theme.spacing.sm,
+    paddingVertical: 4,
+    borderRadius: theme.radius.full,
+  },
+  statusText: {
+    fontSize: theme.typography.size.xs,
+    fontWeight: theme.typography.weight.semibold,
+  },
+  bottomContent: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    padding: theme.spacing.md,
+  },
+  metaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 4,
+    gap: theme.spacing.md,
+  },
+  metaItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    flex: 1,
+  },
+  metaText: {
+    flex: 1,
+  },
+  footerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: theme.spacing.sm,
+  },
+  budgetPill: {
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    paddingHorizontal: theme.spacing.sm,
+    paddingVertical: 3,
+    borderRadius: theme.radius.full,
+  },
+  pillText: {
+    fontSize: 11,
+  },
+  daysLabel: {
+    fontSize: theme.typography.size.xs,
+  },
+  compactContent: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    padding: theme.spacing.sm,
+  },
+})
