@@ -1,6 +1,10 @@
 import { useState } from 'react'
-import { View, Text, TextInput, Pressable, KeyboardAvoidingView, Platform } from 'react-native'
+import { View, Text, Pressable } from 'react-native'
 import { useAuthStore } from '@/stores/useAuthStore'
+import { useTheme } from '@/hooks/useTheme'
+import { ScreenWrapper } from '@/components/ui/ScreenWrapper'
+import { Input } from '@/components/ui/Input'
+import { Button } from '@/components/ui/Button'
 
 // Pantalla de login con Magic Link — sin contraseña
 export default function LoginScreen() {
@@ -8,6 +12,7 @@ export default function LoginScreen() {
   const [sent, setSent] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const { signInWithEmail, isLoading } = useAuthStore()
+  const { colors, spacing, typography } = useTheme()
 
   const isEmailValid = email.trim().includes('@')
   const isDisabled = isLoading || !isEmailValid
@@ -25,83 +30,73 @@ export default function LoginScreen() {
   // Pantalla de confirmación tras enviar el enlace
   if (sent) {
     return (
-      <View className="flex-1 items-center justify-center bg-slate-900 px-6">
-        <Text className="mb-6 text-6xl">✉️</Text>
-        <Text className="mb-3 text-center text-2xl font-bold text-white">
-          Revisa tu email
-        </Text>
-        <Text className="mb-2 text-center text-base text-slate-400">
-          Enviamos un enlace mágico a:
-        </Text>
-        <Text className="mb-10 text-center text-base font-medium text-indigo-400">
-          {email.trim().toLowerCase()}
-        </Text>
-        <Text className="mb-10 text-center text-sm text-slate-500">
-          Toca el enlace del email para entrar a la app.{'\n'}
-          Puede tardar unos segundos en llegar.
-        </Text>
-        <Pressable
-          onPress={() => { setSent(false); setEmail('') }}
-          className="rounded-xl border border-slate-700 px-6 py-3 active:bg-slate-800"
-        >
-          <Text className="text-sm font-medium text-slate-400">
-            Usar otro email
+      <ScreenWrapper scroll={false} padding={false}>
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: spacing.lg }}>
+          <Text style={{ marginBottom: spacing.xl, fontSize: typography.size.xxxl }}>✉️</Text>
+          <Text style={{ marginBottom: spacing.sm, textAlign: 'center', fontSize: typography.size.xl, fontWeight: '700', color: colors.text.primary }}>
+            Revisa tu email
           </Text>
-        </Pressable>
-      </View>
+          <Text style={{ marginBottom: spacing.xs, textAlign: 'center', fontSize: typography.size.md, color: colors.text.secondary }}>
+            Enviamos un enlace mágico a:
+          </Text>
+          <Text style={{ marginBottom: spacing.xxl, textAlign: 'center', fontSize: typography.size.md, fontWeight: '500', color: colors.primary }}>
+            {email.trim().toLowerCase()}
+          </Text>
+          <Text style={{ marginBottom: spacing.xxl, textAlign: 'center', fontSize: typography.size.sm, color: colors.text.tertiary }}>
+            Toca el enlace del email para entrar a la app.{'\n'}
+            Puede tardar unos segundos en llegar.
+          </Text>
+          <Button
+            label="Usar otro email"
+            variant="secondary"
+            onPress={() => { setSent(false); setEmail('') }}
+            style={{ marginTop: spacing.sm }}
+          />
+        </View>
+      </ScreenWrapper>
     )
   }
 
   return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      className="flex-1 bg-slate-900"
-    >
-      <View className="flex-1 items-center justify-center px-6">
+    <ScreenWrapper scroll={false} padding={false}>
+      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: spacing.lg }}>
         {/* Cabecera */}
-        <Text className="mb-2 text-4xl font-bold text-white">TravelApp</Text>
-        <Text className="mb-12 text-center text-base text-slate-400">
+        <Text style={{ marginBottom: spacing.xs, fontSize: typography.size.xxl, fontWeight: '700', color: colors.text.primary }}>TravelApp</Text>
+        <Text style={{ marginBottom: spacing.xxl, textAlign: 'center', fontSize: typography.size.md, color: colors.text.secondary }}>
           Planifica tus viajes con inteligencia artificial
         </Text>
 
         {/* Campo de email */}
-        <TextInput
-          className="mb-3 w-full rounded-xl bg-slate-800 px-4 py-4 text-base text-white"
+        <Input
+          label="Email"
           placeholder="tu@email.com"
-          placeholderTextColor="#64748B"
           value={email}
           onChangeText={(text) => { setEmail(text); setErrorMessage(null) }}
-          keyboardType="email-address"
-          autoCapitalize="none"
-          autoComplete="email"
-          autoCorrect={false}
-          returnKeyType="send"
-          onSubmitEditing={isDisabled ? undefined : handleSend}
           editable={!isLoading}
+          style={{ marginBottom: spacing.sm, width: '100%' }}
         />
 
         {/* Mensaje de error inline */}
         {errorMessage !== null && (
-          <Text className="mb-3 w-full text-sm text-red-400">
+          <Text style={{ marginBottom: spacing.sm, width: '100%', fontSize: typography.size.sm, color: colors.semantic.danger }}>
             {errorMessage}
           </Text>
         )}
 
         {/* Botón principal */}
-        <Pressable
+        <Button
+          label={isLoading ? 'Enviando...' : 'Enviar enlace mágico'}
+          variant="primary"
           onPress={handleSend}
           disabled={isDisabled}
-          className={`w-full rounded-xl bg-indigo-500 py-4 active:bg-indigo-600 ${isDisabled ? 'opacity-50' : ''}`}
-        >
-          <Text className="text-center text-base font-semibold text-white">
-            {isLoading ? 'Enviando...' : 'Enviar enlace mágico'}
-          </Text>
-        </Pressable>
+          loading={isLoading}
+          style={{ width: '100%', marginTop: spacing.sm }}
+        />
 
-        <Text className="mt-4 text-sm text-slate-500">
+        <Text style={{ marginTop: spacing.md, fontSize: typography.size.sm, color: colors.text.tertiary }}>
           Sin contraseña — acceso instantáneo por email
         </Text>
       </View>
-    </KeyboardAvoidingView>
+    </ScreenWrapper>
   )
 }

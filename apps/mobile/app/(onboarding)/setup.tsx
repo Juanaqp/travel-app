@@ -2,17 +2,18 @@ import { useState } from 'react'
 import {
   View,
   Text,
-  TextInput,
   Pressable,
   ScrollView,
-  KeyboardAvoidingView,
-  Platform,
   ActivityIndicator,
 } from 'react-native'
 import { useRouter } from 'expo-router'
 import { useOnboarding } from '@/hooks/useOnboarding'
 import { useToastStore } from '@/stores/useToastStore'
 import { logger } from '@/lib/logger'
+import { useTheme } from '@/hooks/useTheme'
+import { ScreenWrapper } from '@/components/ui/ScreenWrapper'
+import { Input } from '@/components/ui/Input'
+import { Button } from '@/components/ui/Button'
 import type { TravelPace, BudgetTier, TravelInterest } from '@travelapp/types'
 
 // ─── Constantes de configuración ─────────────────────────────────────────────
@@ -75,6 +76,7 @@ export default function OnboardingSetupScreen() {
   const router = useRouter()
   const { completeOnboarding, isCompleting } = useOnboarding()
   const { showToast } = useToastStore()
+  const { colors, spacing, typography, radius } = useTheme()
 
   const [step, setStep] = useState<1 | 2>(1)
 
@@ -128,29 +130,26 @@ export default function OnboardingSetupScreen() {
   }
 
   return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      className="flex-1 bg-slate-900"
-    >
+    <ScreenWrapper scroll={false} padding={false} backgroundColor={colors.background.base}>
       <ScrollView
-        className="flex-1"
-        contentContainerStyle={{ paddingBottom: 40 }}
+        style={{ flex: 1 }}
+        contentContainerStyle={{ paddingBottom: spacing.xxl }}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
         {/* Cabecera con indicador de progreso */}
-        <View className="px-6 pb-2 pt-14">
-          <View className="mb-6 flex-row items-center gap-2">
-            <View className={`h-2 flex-1 rounded-full ${step >= 1 ? 'bg-indigo-500' : 'bg-slate-700'}`} />
-            <View className={`h-2 flex-1 rounded-full ${step >= 2 ? 'bg-indigo-500' : 'bg-slate-700'}`} />
+        <View style={{ paddingHorizontal: spacing.lg, paddingBottom: spacing.xs, paddingTop: spacing.xxl }}>
+          <View style={{ marginBottom: spacing.xl, flexDirection: 'row', alignItems: 'center', gap: spacing.xs }}>
+            <View style={{ height: 8, flex: 1, borderRadius: 4, backgroundColor: step >= 1 ? colors.primary : colors.border }} />
+            <View style={{ height: 8, flex: 1, borderRadius: 4, backgroundColor: step >= 2 ? colors.primary : colors.border }} />
           </View>
-          <Text className="text-xs font-medium uppercase tracking-widest text-indigo-400">
+          <Text style={{ fontSize: typography.size.xs, fontWeight: '500', textTransform: 'uppercase', letterSpacing: 1, color: colors.primary }}>
             Paso {step} de 2
           </Text>
-          <Text className="mt-1 text-2xl font-bold text-white">
+          <Text style={{ marginTop: spacing.xs, fontSize: typography.size.xxl, fontWeight: '700', color: colors.text.primary }}>
             {step === 1 ? 'Cuéntanos sobre ti' : 'Tu estilo de viaje'}
           </Text>
-          <Text className="mt-1 text-sm text-slate-400">
+          <Text style={{ marginTop: spacing.xs, fontSize: typography.size.sm, color: colors.text.secondary }}>
             {step === 1
               ? 'Esta información personaliza tu experiencia.'
               : 'Así generaremos itinerarios perfectos para ti.'}
@@ -159,69 +158,89 @@ export default function OnboardingSetupScreen() {
 
         {/* ── PASO 1 ── */}
         {step === 1 && (
-          <View className="px-6 pt-4">
+          <View style={{ paddingHorizontal: spacing.lg, paddingTop: spacing.md }}>
             {/* Nombre completo */}
-            <Text className="mb-2 text-sm font-medium text-slate-300">Nombre completo</Text>
-            <TextInput
-              className="mb-6 rounded-xl bg-slate-800 px-4 py-4 text-base text-white"
+            <Input
+              label="Nombre completo"
               placeholder="Tu nombre"
-              placeholderTextColor="#64748B"
               value={fullName}
               onChangeText={setFullName}
-              autoCapitalize="words"
-              autoCorrect={false}
-              returnKeyType="next"
-              maxLength={80}
+              style={{ marginBottom: spacing.xl }}
             />
 
             {/* Zona horaria */}
-            <Text className="mb-2 text-sm font-medium text-slate-300">Zona horaria</Text>
+            <Text style={{ marginBottom: spacing.xs, fontSize: typography.size.sm, fontWeight: '500', color: colors.text.secondary }}>Zona horaria</Text>
             <Pressable
               onPress={handleAutoDetectTimezone}
-              className="mb-3 flex-row items-center gap-2 rounded-xl border border-indigo-500/40 bg-indigo-900/30 px-4 py-3 active:bg-indigo-900/50"
+              style={{
+                marginBottom: spacing.sm,
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: spacing.xs,
+                borderRadius: radius.md,
+                borderWidth: 1,
+                borderColor: colors.primary,
+                backgroundColor: colors.primary + '1A', // 10% opacity
+                paddingHorizontal: spacing.md,
+                paddingVertical: spacing.sm,
+              }}
             >
-              <Text className="text-base">📍</Text>
-              <View className="flex-1">
-                <Text className="text-sm font-medium text-indigo-300">Detectar automáticamente</Text>
-                <Text className="text-xs text-slate-400">{timezone}</Text>
+              <Text style={{ fontSize: typography.size.md }}>📍</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: typography.size.sm, fontWeight: '500', color: colors.primary }}>Detectar automáticamente</Text>
+                <Text style={{ fontSize: typography.size.xs, color: colors.text.secondary }}>{timezone}</Text>
               </View>
             </Pressable>
 
-            <View className="mb-6 overflow-hidden rounded-xl bg-slate-800">
+            <View style={{ marginBottom: spacing.xl, borderRadius: radius.md, overflow: 'hidden', backgroundColor: colors.background.surface }}>
               {COMMON_TIMEZONES.map((tz, index) => (
                 <Pressable
                   key={tz.value}
                   onPress={() => setTimezone(tz.value)}
-                  className={`flex-row items-center justify-between px-4 py-3 active:bg-slate-700
-                    ${index < COMMON_TIMEZONES.length - 1 ? 'border-b border-slate-700' : ''}
-                  `}
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    paddingHorizontal: spacing.md,
+                    paddingVertical: spacing.sm,
+                    backgroundColor: timezone === tz.value ? colors.background.elevated : 'transparent',
+                    borderBottomWidth: index < COMMON_TIMEZONES.length - 1 ? 1 : 0,
+                    borderBottomColor: colors.border,
+                  }}
                 >
-                  <Text className={`text-sm ${timezone === tz.value ? 'font-semibold text-indigo-400' : 'text-slate-300'}`}>
+                  <Text style={{
+                    fontSize: typography.size.sm,
+                    fontWeight: timezone === tz.value ? '600' : '400',
+                    color: timezone === tz.value ? colors.primary : colors.text.secondary
+                  }}>
                     {tz.label}
                   </Text>
                   {timezone === tz.value && (
-                    <Text className="text-indigo-400">✓</Text>
+                    <Text style={{ color: colors.primary }}>✓</Text>
                   )}
                 </Pressable>
               ))}
             </View>
 
             {/* Moneda preferida */}
-            <Text className="mb-2 text-sm font-medium text-slate-300">Moneda preferida</Text>
-            <View className="mb-8 flex-row flex-wrap gap-2">
+            <Text style={{ marginBottom: spacing.xs, fontSize: typography.size.sm, fontWeight: '500', color: colors.text.secondary }}>Moneda preferida</Text>
+            <View style={{ marginBottom: spacing.xxl, flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs }}>
               {CURRENCIES.map((currency) => (
                 <Pressable
                   key={currency}
                   onPress={() => setPreferredCurrency(currency)}
-                  className={`rounded-xl px-4 py-2.5 active:opacity-80 ${
-                    preferredCurrency === currency
-                      ? 'bg-indigo-600'
-                      : 'bg-slate-800'
-                  }`}
+                  style={{
+                    borderRadius: radius.md,
+                    paddingHorizontal: spacing.md,
+                    paddingVertical: spacing.sm,
+                    backgroundColor: preferredCurrency === currency ? colors.primary : colors.background.surface,
+                  }}
                 >
-                  <Text className={`text-sm font-semibold ${
-                    preferredCurrency === currency ? 'text-white' : 'text-slate-300'
-                  }`}>
+                  <Text style={{
+                    fontSize: typography.size.sm,
+                    fontWeight: '600',
+                    color: preferredCurrency === currency ? colors.text.primary : colors.text.secondary
+                  }}>
                     {currency}
                   </Text>
                 </Pressable>
@@ -229,66 +248,81 @@ export default function OnboardingSetupScreen() {
             </View>
 
             {/* Botón Siguiente */}
-            <Pressable
+            <Button
+              label="Siguiente →"
+              variant="primary"
               onPress={() => setStep(2)}
               disabled={!isStep1Valid}
-              className={`rounded-2xl py-4 ${isStep1Valid ? 'bg-indigo-600 active:bg-indigo-700' : 'bg-slate-700 opacity-50'}`}
-            >
-              <Text className="text-center text-base font-semibold text-white">
-                Siguiente →
-              </Text>
-            </Pressable>
+              style={{ marginTop: spacing.sm }}
+            />
           </View>
         )}
 
         {/* ── PASO 2 ── */}
         {step === 2 && (
-          <View className="px-6 pt-4">
+          <View style={{ paddingHorizontal: spacing.lg, paddingTop: spacing.md }}>
             {/* Ritmo de viaje */}
-            <Text className="mb-3 text-sm font-medium text-slate-300">Ritmo de viaje</Text>
-            <View className="mb-6 gap-3">
+            <Text style={{ marginBottom: spacing.sm, fontSize: typography.size.sm, fontWeight: '500', color: colors.text.secondary }}>Ritmo de viaje</Text>
+            <View style={{ marginBottom: spacing.xl, gap: spacing.sm }}>
               {PACE_OPTIONS.map((option) => (
                 <Pressable
                   key={option.value}
                   onPress={() => setPreferredPace(option.value)}
-                  className={`flex-row items-center gap-4 rounded-2xl p-4 active:opacity-80 ${
-                    preferredPace === option.value
-                      ? 'border border-indigo-500 bg-indigo-900/40'
-                      : 'bg-slate-800'
-                  }`}
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: spacing.md,
+                    borderRadius: radius.lg,
+                    padding: spacing.md,
+                    borderWidth: preferredPace === option.value ? 1 : 0,
+                    borderColor: colors.primary,
+                    backgroundColor: preferredPace === option.value ? colors.primary + '1A' : colors.background.surface, // 10% opacity
+                  }}
                 >
-                  <Text className="text-3xl">{option.emoji}</Text>
-                  <View className="flex-1">
-                    <Text className={`text-base font-semibold ${
-                      preferredPace === option.value ? 'text-indigo-300' : 'text-white'
-                    }`}>
+                  <Text style={{ fontSize: typography.size.xxxl }}>{option.emoji}</Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{
+                      fontSize: typography.size.md,
+                      fontWeight: '600',
+                      color: preferredPace === option.value ? colors.primary : colors.text.primary
+                    }}>
                       {option.label}
                     </Text>
-                    <Text className="text-xs text-slate-400">{option.desc}</Text>
+                    <Text style={{ fontSize: typography.size.xs, color: colors.text.secondary }}>{option.desc}</Text>
                   </View>
                   {preferredPace === option.value && (
-                    <Text className="text-xl text-indigo-400">✓</Text>
+                    <Text style={{ fontSize: typography.size.xl, color: colors.primary }}>✓</Text>
                   )}
                 </Pressable>
               ))}
             </View>
 
             {/* Intereses de viaje (multi-select, mínimo 1) */}
-            <Text className="mb-1 text-sm font-medium text-slate-300">Intereses</Text>
-            <Text className="mb-3 text-xs text-slate-500">Selecciona al menos uno</Text>
-            <View className="mb-6 flex-row flex-wrap gap-2">
+            <Text style={{ marginBottom: spacing.xs, fontSize: typography.size.sm, fontWeight: '500', color: colors.text.secondary }}>Intereses</Text>
+            <Text style={{ marginBottom: spacing.sm, fontSize: typography.size.xs, color: colors.text.tertiary }}>Selecciona al menos uno</Text>
+            <View style={{ marginBottom: spacing.xl, flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs }}>
               {INTEREST_OPTIONS.map((interest) => {
                 const selected = travelInterests.includes(interest.value)
                 return (
                   <Pressable
                     key={interest.value}
                     onPress={() => toggleInterest(interest.value)}
-                    className={`flex-row items-center gap-2 rounded-xl px-4 py-2.5 active:opacity-80 ${
-                      selected ? 'bg-indigo-600' : 'bg-slate-800'
-                    }`}
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: spacing.xs,
+                      borderRadius: radius.md,
+                      paddingHorizontal: spacing.md,
+                      paddingVertical: spacing.sm,
+                      backgroundColor: selected ? colors.primary : colors.background.surface,
+                    }}
                   >
-                    <Text className="text-base">{interest.emoji}</Text>
-                    <Text className={`text-sm font-medium ${selected ? 'text-white' : 'text-slate-300'}`}>
+                    <Text style={{ fontSize: typography.size.md }}>{interest.emoji}</Text>
+                    <Text style={{
+                      fontSize: typography.size.sm,
+                      fontWeight: '500',
+                      color: selected ? colors.text.primary : colors.text.secondary
+                    }}>
                       {interest.label}
                     </Text>
                   </Pressable>
@@ -297,66 +331,62 @@ export default function OnboardingSetupScreen() {
             </View>
 
             {/* Nivel de presupuesto */}
-            <Text className="mb-3 text-sm font-medium text-slate-300">Presupuesto habitual</Text>
-            <View className="mb-8 gap-3">
+            <Text style={{ marginBottom: spacing.sm, fontSize: typography.size.sm, fontWeight: '500', color: colors.text.secondary }}>Presupuesto habitual</Text>
+            <View style={{ marginBottom: spacing.xxl, gap: spacing.sm }}>
               {BUDGET_OPTIONS.map((option) => (
                 <Pressable
                   key={option.value}
                   onPress={() => setPreferredBudget(option.value)}
-                  className={`flex-row items-center gap-4 rounded-2xl p-4 active:opacity-80 ${
-                    preferredBudget === option.value
-                      ? 'border border-indigo-500 bg-indigo-900/40'
-                      : 'bg-slate-800'
-                  }`}
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: spacing.md,
+                    borderRadius: radius.lg,
+                    padding: spacing.md,
+                    borderWidth: preferredBudget === option.value ? 1 : 0,
+                    borderColor: colors.primary,
+                    backgroundColor: preferredBudget === option.value ? colors.primary + '1A' : colors.background.surface,
+                  }}
                 >
-                  <Text className="text-3xl">{option.emoji}</Text>
-                  <View className="flex-1">
-                    <Text className={`text-base font-semibold ${
-                      preferredBudget === option.value ? 'text-indigo-300' : 'text-white'
-                    }`}>
+                  <Text style={{ fontSize: typography.size.xxxl }}>{option.emoji}</Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{
+                      fontSize: typography.size.md,
+                      fontWeight: '600',
+                      color: preferredBudget === option.value ? colors.primary : colors.text.primary
+                    }}>
                       {option.label}
                     </Text>
-                    <Text className="text-xs text-slate-400">{option.desc}</Text>
+                    <Text style={{ fontSize: typography.size.xs, color: colors.text.secondary }}>{option.desc}</Text>
                   </View>
                   {preferredBudget === option.value && (
-                    <Text className="text-xl text-indigo-400">✓</Text>
+                    <Text style={{ fontSize: typography.size.xl, color: colors.primary }}>✓</Text>
                   )}
                 </Pressable>
               ))}
             </View>
 
             {/* Botones Atrás / Completar */}
-            <View className="flex-row gap-3">
-              <Pressable
+            <View style={{ flexDirection: 'row', gap: spacing.sm }}>
+              <Button
+                label="← Atrás"
+                variant="secondary"
                 onPress={() => setStep(1)}
-                className="flex-1 rounded-2xl border border-slate-600 py-4 active:bg-slate-800"
-              >
-                <Text className="text-center text-base font-medium text-slate-300">
-                  ← Atrás
-                </Text>
-              </Pressable>
+                style={{ flex: 1 }}
+              />
 
-              <Pressable
+              <Button
+                label="Empezar ✓"
+                variant="primary"
                 onPress={handleComplete}
                 disabled={!isStep2Valid || isCompleting}
-                className={`flex-1 rounded-2xl py-4 ${
-                  isStep2Valid && !isCompleting
-                    ? 'bg-indigo-600 active:bg-indigo-700'
-                    : 'bg-slate-700 opacity-50'
-                }`}
-              >
-                {isCompleting ? (
-                  <ActivityIndicator size="small" color="#ffffff" />
-                ) : (
-                  <Text className="text-center text-base font-semibold text-white">
-                    Empezar ✓
-                  </Text>
-                )}
-              </Pressable>
+                loading={isCompleting}
+                style={{ flex: 1 }}
+              />
             </View>
           </View>
         )}
       </ScrollView>
-    </KeyboardAvoidingView>
+    </ScreenWrapper>
   )
 }

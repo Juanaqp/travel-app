@@ -10,7 +10,7 @@ import { checkAndIncrementUsage, RateLimitExceededError } from '../_shared/rateL
 
 // ─── Constantes ───────────────────────────────────────────────────────────────
 
-const TIMEOUT_MS = 200_000  // 200s: permite 2 llamadas de ~60-80s c/u + margen
+const TIMEOUT_MS = 900_000  // 400s: permite 2 llamadas de ~120-150s c/u + margen
 const MAX_RETRIES = 2       // Reducido: cada llamada tarda ~60s, 3 superaban el timeout
 const CACHE_TTL_HOURS = 72
 const MODEL = 'gpt-4o-mini'
@@ -387,11 +387,13 @@ REGLAS DE CONTENIDO:
 // ─── User prompt ──────────────────────────────────────────────────────────────
 
 const buildUserPrompt = (userRequest: string, context: RequestContext): string => {
+  console.log(`[buildUserPrompt] Iniciando — userRequest.length: ${userRequest.length}`)
   const days =
     Math.ceil(
       (new Date(context.dates.end).getTime() - new Date(context.dates.start).getTime()) /
         (1000 * 60 * 60 * 24)
     ) + 1
+  console.log(`[buildUserPrompt] Días calculados: ${days}`)
 
   const budgetLabel: Record<RequestContext['budget'], string> = {
     budget: 'económico',
@@ -439,6 +441,7 @@ const buildUserPrompt = (userRequest: string, context: RequestContext): string =
     `\nRecuerda: fromLocation y toLocation son STRINGS, createdAt es OBLIGATORIO en cada nodo.` +
     `\nIncluye lat/lng reales (WGS84) en location para TODOS los nodos con ubicación física conocida.` +
     `\n\nRESPONDE ÚNICAMENTE CON EL OBJETO JSON. Sin explicaciones, sin markdown.`
+  console.log(`[buildUserPrompt] Prompt final — longitud: ${prompt.length} chars`)
 
   return prompt
 }
@@ -560,6 +563,13 @@ const callOpenAIWithRetry = async (
 ): Promise<ItineraryGraph> => {
   const systemPrompt = buildSystemPrompt(context.language)
   const userPrompt = buildUserPrompt(userRequest, context)
+  console.log(`[callOpenAIWithRetry] ════════════════════════════════════════`)
+  console.log(`[callOpenAIWithRetry] SYSTEM PROMPT (${systemPrompt.length} chars):`)
+  console.log(`[callOpenAIWithRetry] ${systemPrompt}`)
+  console.log(`[callOpenAIWithRetry] ════════════════════════════════════════`)
+  console.log(`[callOpenAIWithRetry] USER PROMPT (${userPrompt.length} chars):`)
+  console.log(`[callOpenAIWithRetry] ${userPrompt}`)
+  console.log(`[callOpenAIWithRetry] ════════════════════════════════════════`)
   const url = `${OPENAI_BASE_URL}/chat/completions`
 
   let lastZodError: z.ZodIssue[] | null = null
@@ -572,6 +582,7 @@ const callOpenAIWithRetry = async (
     // para no acumular una respuesta incompleta y consumir tokens del contexto.
     const isJsonParseError =
       lastZodError?.length === 1 && lastZodError[0].message === 'La respuesta no es JSON válido'
+    console.log(`[attempt ${attempt}] isJsonParseError: ${isJsonParseError}, lastZodError: ${lastZodError?.length ?? 0} issues`)
 
     // Construir historial de mensajes
     const messages: OpenAIMessage[] = [
@@ -584,22 +595,29 @@ const callOpenAIWithRetry = async (
       messages.push({ role: 'assistant', content: lastRawText })
       messages.push({ role: 'user', content: buildCorrectionPrompt(lastZodError) })
     }
+    console.log(`[attempt ${attempt}] Messages preparados — count: ${messages.length}, totalSize: ${JSON.stringify(messages).length} bytes`)
 
     let rawText: string
     try {
-      console.log(`[generate-itinerary] Enviando request a OpenAI API...`)
+      console.log(`[attempt ${attempt}] Enviando request a OpenAI API...`)
+      const requestBody = {
+        model: MODEL,
+        messages,
+        response_format: { type: 'json_object' },
+        max_tokens: MAX_OUTPUT_TOKENS,
+      }
+      console.log(`[attempt ${attempt}] ════════════════════════════════════════`)
+      console.log(`[attempt ${attempt}] REQUEST BODY A OPENAI:`)
+      console.log(`[attempt ${attempt}] ${JSON.stringify(requestBody, null, 2)}`)
+      console.log(`[attempt ${attempt}] ════════════════════════════════════════`)
+      
       const res = await fetch(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${apiKey}`,
         },
-        body: JSON.stringify({
-          model: MODEL,
-          messages,
-          response_format: { type: 'json_object' },
-          max_tokens: MAX_OUTPUT_TOKENS,
-        }),
+        body: JSON.stringify(requestBody),
         signal,
       })
 
@@ -615,9 +633,10 @@ const callOpenAIWithRetry = async (
 
       if (!rawText) throw new OpenAIApiError('OpenAI devolvió contenido vacío')
       lastRawText = rawText  // Guardar para el reintento multi-turn si este intento falla
-      console.log(
-        `[generate-itinerary] Respuesta OpenAI — longitud: ${rawText.length} chars, finishReason: ${finishReason}`
-      )
+      console.log(`[attempt ${attempt}] ════════════════════════════════════════`)
+      console.log(`[attempt ${attempt}] RESPUESTA DE OPENAI (longitud: ${rawText.length} chars, finishReason: ${finishReason}):`)
+      console.log(`[attempt ${attempt}] ${rawText}`)
+      console.log(`[attempt ${attempt}] ════════════════════════════════════════`)
       if (finishReason === 'length') {
         console.warn(
           `[attempt ${attempt}] finish_reason=length — respuesta truncada (${MAX_OUTPUT_TOKENS} tokens)`
@@ -629,9 +648,12 @@ const callOpenAIWithRetry = async (
     }
 
     // ── Paso 1: extraer JSON de texto con posible markdown o texto extra ────
+    console.log(`[attempt ${attempt}] Paso 1: extrayendo JSON...`)
     const cleanJson = extractJson(rawText)
+    console.log(`[attempt ${attempt}] JSON extraído — longitud: ${cleanJson.length} chars`)
 
     // ── Paso 2: parsear JSON ──────────────────────────────────────────────────
+    console.log(`[attempt ${attempt}] Paso 2: parseando JSON...`)
     let parsed: unknown
     try {
       parsed = JSON.parse(cleanJson)
@@ -646,6 +668,7 @@ const callOpenAIWithRetry = async (
     }
 
     // ── Paso 3: detectar respuesta de error explícita del modelo ─────────────
+    console.log(`[attempt ${attempt}] Paso 3: detectando errores explícitos...`)
     if (
       typeof parsed === 'object' &&
       parsed !== null &&
@@ -659,13 +682,16 @@ const callOpenAIWithRetry = async (
     }
 
     // ── Paso 4: normalizar antes de validar ───────────────────────────────────
+    console.log(`[attempt ${attempt}] Paso 4: normalizando itinerario...`)
     console.log(`[attempt ${attempt}] JSON parseado (inicio 800 chars):`, cleanJson.slice(0, 800))
     const normalized = normalizeItinerary(parsed as Record<string, unknown>)
 
     // ── Paso 5: validar con Zod ───────────────────────────────────────────────
+    console.log(`[attempt ${attempt}] Paso 5: validando con Zod...`)
+    console.log(`[attempt ${attempt}] Estructura normalizada — keys: ${Object.keys(normalized).join(', ')}`)
     const validation = itineraryGraphSchema.safeParse(normalized)
     if (validation.success) {
-      console.log(`[attempt ${attempt}] Validación Zod exitosa`)
+      console.log(`[attempt ${attempt}] Validación Zod exitosa ✓`)
       return validation.data
     }
 
@@ -704,12 +730,14 @@ Deno.serve(async (req: Request) => {
     } catch {
       return errorResponse('INVALID_BODY', 'Body JSON inválido', 400)
     }
+    console.log(`[generate-itinerary] Body recibido — tamaño: ${JSON.stringify(body).length} bytes`)
 
     parseResult = requestSchema.safeParse(body)
     if (!parseResult.success) {
       return errorResponse('INVALID_INPUT', 'Datos de entrada inválidos', 422)
     }
     const { userRequest, context } = parseResult.data
+    console.log(`[generate-itinerary] Input validado ✓ — tripId: ${context.tripId}, userRequest.length: ${userRequest.length}`)
 
     // 2. Verificar autenticación
     const authHeader = req.headers.get('Authorization')

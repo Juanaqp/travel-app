@@ -15,6 +15,8 @@ import * as Linking from 'expo-linking'
 import { supabase } from '@/lib/supabase'
 import { logger } from '@/lib/logger'
 import { useToastStore } from '@/stores/useToastStore'
+import { useTheme } from '@/hooks/useTheme'
+import { ScreenWrapper } from '@/components/ui/ScreenWrapper'
 
 // Extrae access_token y refresh_token del fragmento del deep link.
 // Lógica idéntica a parseDeepLinkTokens en _layout.tsx para garantizar consistencia.
@@ -36,6 +38,7 @@ const parseDeepLinkTokens = (url: string): { accessToken: string; refreshToken: 
 export default function AuthCallbackScreen() {
   const router = useRouter()
   const { showToast } = useToastStore()
+  const { colors, spacing, typography } = useTheme()
 
   useEffect(() => {
     const processCallback = async () => {
@@ -76,9 +79,11 @@ export default function AuthCallbackScreen() {
   }, [])
 
   return (
-    <View className="flex-1 items-center justify-center bg-slate-900">
-      <ActivityIndicator size="large" color="#6366F1" />
-      <Text className="mt-4 text-sm text-slate-400">Verificando enlace...</Text>
-    </View>
+    <ScreenWrapper scroll={false} padding={false}>
+      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+        <ActivityIndicator size="large" color={colors.primary} />
+        <Text style={{ marginTop: spacing.md, fontSize: typography.size.sm, color: colors.text.secondary }}>Verificando enlace...</Text>
+      </View>
+    </ScreenWrapper>
   )
 }
